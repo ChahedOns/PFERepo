@@ -20,9 +20,9 @@ mail.init_app(app)
 
 
 class Reparation(db.Document):
-    vh = db.StringField()
-    En = db.StringField()
-    date = db.DateTimeField(default=datetime.now)
+    vh = db.StringField(required=True)
+    En = db.StringField(required=True)
+    date = db.DateTimeField(required=True, default=datetime.now)
 
     def to_json(self):
         return {
@@ -33,8 +33,8 @@ class Reparation(db.Document):
 
 
 class Entretien(db.Document):
-    codeEnt = db.StringField()
-    Libelle = db.StringField()
+    codeEnt = db.StringField(required=True)
+    Libelle = db.StringField(required=True)
 
     def to_json(self):
         return {
@@ -44,16 +44,16 @@ class Entretien(db.Document):
 
 
 class Vehicule(db.Document):
-    mat = db.StringField()
-    ty = db.StringField()
-    an = db.IntField()
-    mr = db.StringField()
-    tyC = db.StringField()
-    conso = db.IntField()
-    powr = db.IntField()
-    etat = db.BooleanField()
-    cap = db.FloatField()
-    dispo = db.BooleanField()
+    mat = db.StringField(required=True)
+    ty = db.StringField(required=True)
+    an = db.IntField(required=True)
+    mr = db.StringField(required=True)
+    tyC = db.StringField(default="Essence")
+    conso = db.FloatField(default=0.0)
+    powr = db.IntField(default=5)
+    etat = db.BooleanField(default=False)
+    cap = db.FloatField(default=0.0)
+    dispo = db.BooleanField(default=False)
     # rep = ListField(EmbeddedDocumentField(Reparation))
     kilo = db.FloatField()
     nb = db.IntField()
@@ -91,16 +91,15 @@ class Vehicule(db.Document):
 class Chauffeur(db.Document):
     counter = 0
     idCh = db.IntField()
-    nom = db.StringField()
-    pre = db.StringField()
-    num = db.StringField()
-    dn = db.StringField()
-    de = db.StringField()
-    mail = db.StringField()
-    pwd = db.StringField()
-    adr = db.StringField()
-    nomSup = db.StringField()
-    sup = db.IntField()
+    nom = db.StringField(required=True)
+    pre = db.StringField(required=True)
+    num = db.StringField(required=True)
+    dn = db.StringField(required=True)
+    de = db.StringField(required=True)
+    mail = db.StringField(required=True)
+    pwd = db.StringField(required=True)
+    adr = db.StringField(required=True)
+
 
     def addpwd(self):
         liste = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
@@ -143,7 +142,7 @@ class Chauffeur(db.Document):
             "Adresse ": self.adr,
             "Email": self.mail,
             "Mot de passe ": self.pwd,
-            "Nom Superviseur": self.nomSup
+
 
         }
 
@@ -151,14 +150,14 @@ class Chauffeur(db.Document):
 class Superviseur(db.Document):
     counter = 0
     idsup = db.IntField()
-    nom = db.StringField()
-    pre = db.StringField()
-    num = db.StringField()
-    dn = db.DateField()
-    de = db.DateField()
-    mail = db.StringField()
-    pwd = db.StringField()
-    adr = db.StringField()
+    nom = db.StringField(required=True)
+    pre = db.StringField(required=True)
+    num = db.StringField(required=True)
+    dn = db.DateField(required=True)
+    de = db.DateField(required=True)
+    mail = db.StringField(required=True)
+    pwd = db.StringField(required=True)
+    adr = db.StringField(required=True)
 
     def set_id(self):
         Superviseur.counter += 1
@@ -212,6 +211,7 @@ def repar():
         return make_response(jsonify(Rs), 200)
     elif request.method == "POST":
         content = request.json
+        n = Entretien.objects.count()
         E = Entretien.objects(codeEnt=content["codeEnt"]).first()
         V = Vehicule.objects(mat=content["Matricule"]).first()
         if E == None:
@@ -223,12 +223,21 @@ def repar():
             if x == 0:
                 R = Reparation(vh=content["Matricule"], En=content["codeEnt"])
                 R.save()
+                c = Reparation.objects(vh=content["Matricule"]).count()
+                if c == n or c > n:
+                    et = True
+                else:
+                    et = False
+                R.update(etat=et, dispo=et)
                 return make_response("Reparation ajoutée avec succées ", 200)
+
             else:
                 return make_response("Réparation Existe déjà  ", 201)
     else:
         for r in Reparation.objects():
             r.delete()
+        for v in Vehicule.objects():
+            v.update(etat=False, dispo=False)
         return make_response("Suppression de tous les Réparations avec succées!", 200)
 
 
@@ -247,15 +256,30 @@ def one_rep():
         if R == "None":
             return ("Réparation inexistante ! ", 201)
         else:
+            n = Entretien.objects.count()
             R.update(date=datetime.now)
+            c = Reparation.objects(vh=content["Matricule"]).count()
+            if c == n or c > n:
+                et = True
+            else:
+                et = False
+            R.update(etat=et, dispo=et)
             return make_response("Mise à jour effectuée avec succées  ! ", 200)
     else:
         R = Reparation.objects(vh=content["Matricule"], En=content["codeEnt"]).first()
         if R == "None":
             return ("Réparation inexistante ! ", 201)
         else:
+            n = Entretien.objects.count()
             R.delete()
+            c = Reparation.objects(vh=content["Matricule"]).count()
+            if c == n:
+                et = True
+            else:
+                et = False
+            R.update(etat=et, dispo=et)
             return make_response("Suppression effectuée avec succées  ! ", 200)
+
 
 # Entretien crud
 @app.route("/ent", methods=['POST', 'GET', 'DELETE'])
@@ -306,26 +330,6 @@ def one_ent():
             E.delete()
             return make_response("Suppression avec succés !", 200)
 
-# Etat crud
-@app.route("/etat", methods=['POST', 'GET'])
-def etat():
-    n = Entretien.objects.count()
-    vs = []
-    cs = []
-    for e in Vehicule.objects.order_by("mat"):
-        vs.append(e)
-    for v in vs:
-        c = Reparation.objects(vh=v.mat).count()
-        cs.append(c)
-        i = 0
-        if c == n or c > n:
-            et = True
-            i = i + 1
-        else:
-            i = i - 1
-            et = False
-        v.update(etat=et)
-        return make_response(jsonify("voitures : ", Vehicule.objects), 200)
 
 # Vehicule crud
 @app.route("/vh", methods=['POST', 'GET', 'DELETE'])
@@ -406,6 +410,7 @@ def OneVehicule():
             V.delete()
             return make_response("Suppression avec Succés!", 200)
 
+
 # Superviseur crud
 @app.route("/sv", methods=['POST', 'GET', 'DELETE'])
 def CrudSuperviseur():
@@ -473,7 +478,8 @@ def OneSuperviseur():
             U.delete()
             return make_response("Suppression du superviseur avec succées  !", 200)
 
-#Chauffeur crud
+
+# Chauffeur crud
 @app.route("/ch", methods=['POST', 'GET', 'DELETE'])
 def CrudChauffeur():
     if request.method == "GET":
