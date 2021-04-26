@@ -2,6 +2,8 @@ from datetime import datetime
 from random import random
 from urllib import request
 
+import bson
+import folium
 from flask_mail import Mail, Message
 from flask import Flask, make_response, request, jsonify
 from flask_mongoengine import MongoEngine
@@ -33,7 +35,7 @@ class Reparation(db.Document):
 
 
 class Entretien(db.Document):
-    codeEnt = db.StringField(required=True)
+    codeEnt = db.StringField(required=True, Primary_key=True)
     Libelle = db.StringField(required=True)
 
     def to_json(self):
@@ -44,7 +46,7 @@ class Entretien(db.Document):
 
 
 class Vehicule(db.Document):
-    mat = db.StringField(required=True)
+    mat = db.StringField(primary_key=True)
     ty = db.StringField(required=True)
     an = db.IntField(required=True)
     mr = db.StringField(required=True)
@@ -54,9 +56,12 @@ class Vehicule(db.Document):
     etat = db.BooleanField(default=False)
     cap = db.FloatField(default=0.0)
     dispo = db.BooleanField(default=False)
-    # rep = ListField(EmbeddedDocumentField(Reparation))
     kilo = db.FloatField()
     nb = db.IntField()
+    types = ["A", "B", "C", "D", "E", "H"]
+    mot = ["Location", "Livraison", "Maintenance", "Transportation", "Déplacement"]
+    tyP = db.StringField(choice=types, required=True)
+    motClé = db.ListField(db.StringField(choice=mot, default=mot))
 
     def to_json(self):
         return {
@@ -71,69 +76,29 @@ class Vehicule(db.Document):
             "Kilométrage": self.kilo,
             "Nombre des Places ": self.nb,
             "Capacité (kg) ": self.cap,
-
-            """Maintenance ": [
-                {
-                    "Climatisation": self.clim,
-                    "Parallélisme": self.para,
-                    "Vidange": self.vid,
-                    "Pneaumatique": self.pneau,
-                    "Mouteur": self.mout,
-                    "Etat": self.etat"
-                 }
-            ],"""
-
-            "Disponibilité": self.dispo
+            "Disponibilité": self.dispo,
+            "Type de permis ": self.tyP,
+            "Mot Clé : ": self.motClé
 
         }
 
 
 class Chauffeur(db.Document):
-    counter = 0
-    idCh = db.IntField()
     nom = db.StringField(required=True)
     pre = db.StringField(required=True)
     num = db.StringField(required=True)
-    dn = db.StringField(required=True)
-    de = db.StringField(required=True)
-    mail = db.StringField(required=True)
+    dn = db.DateField(required=True)
+    de = db.DateField(required=True)
+    mail = db.StringField(primary_key=True)
     pwd = db.StringField(required=True)
     adr = db.StringField(required=True)
-
-
-    def addpwd(self):
-        liste = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
-                 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N',
-                 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7',
-                 '8', '9']
-        motDePass = []
-        n = 1
-        while n <= 25:
-            c = int(random() * 62)
-            motDePass.append(liste[c])  # Liste motDePass mis a jour
-            n = n + 1
-
-        """msg = Message(
-            f"Hello{self.nom} {self.pre} This is your App Password : {motDePass} use it to login and becareful ",
-            sender="mail@gmail.com", recipients=self.mail)
-        mail.send(msg)"""
-        ch = ""
-        for c in motDePass:
-            ch = ch + str(c)
-
-        return ch
-
-    def set_id(self):
-        Chauffeur.counter += 1
-        self.idCh = Chauffeur.counter
-
-    def set_pwd(self):
-        self.pwd = str(hash(self.addpwd()))
+    dispo = db.BooleanField(default=True)
+    types = ["A", "B", "C", "D", "E", "H"]
+    typ = db.ListField(db.StringField(choice=types), required=True)
 
     def to_json(self):
         return {
 
-            "ID Chauffeur ": self.idCh,
             "Nom ": self.nom,
             "prénom": self.pre,
             "N° Télephone ": self.num,
@@ -142,34 +107,24 @@ class Chauffeur(db.Document):
             "Adresse ": self.adr,
             "Email": self.mail,
             "Mot de passe ": self.pwd,
-
+            "Disponibilité": self.dispo
 
         }
 
 
 class Superviseur(db.Document):
-    counter = 0
-    idsup = db.IntField()
     nom = db.StringField(required=True)
     pre = db.StringField(required=True)
     num = db.StringField(required=True)
     dn = db.DateField(required=True)
     de = db.DateField(required=True)
-    mail = db.StringField(required=True)
+    mail = db.StringField(primary_key=True)
     pwd = db.StringField(required=True)
     adr = db.StringField(required=True)
-
-    def set_id(self):
-        Superviseur.counter += 1
-        self.idsup = Superviseur.counter
-
-    def set_pwd(self):
-        self.pwd = str(hash(self.pwd))
 
     def to_json(self):
         return {
 
-            "ID Superviseur": self.idsup,
             "Nom": self.nom,
             "prénom": self.pre,
             "N° Télephone": self.num,
@@ -182,12 +137,24 @@ class Superviseur(db.Document):
         }
 
 
-class Users(db.Document):
+class Client(db.Document):
+    cin = db.StringField(length=8)
+    nom = db.StringField(required=True)
+    pre = db.StringField(required=True)
+    num = db.StringField(required=True, length=8)
+    dn = db.DateField(required=True)
+    mail = db.StringField(required=True, primary_key=True)
+    pwd = db.StringField(required=True)
+    adr = db.StringField(required=True)
+
+
+class User(db.Document):
     nom = db.StringField()
     pre = db.StringField()
-    mail = db.StringField()
+    ref = db.StringField(primary_key=True)
     pwd = db.StringField()
-    id = db.StringField()
+    mail = db.StringField()
+    idu = db.StringField()
 
     def to_json(self):
         return {
@@ -199,10 +166,99 @@ class Users(db.Document):
         }
 
 
+class Destination(db.Document):
+    ref = db.StringField(primary_key=True)
+    lat = db.FloatField(required=True)
+    lar = db.FloatField(required=True)
+    gouv = db.StringField(required=True)
+    reg = db.StringField(required=True)
+    rue = db.StringField(required=True)
+    numR = db.IntField(required=True)
+    codePostal = db.IntField(required=True)
+
+    def to_json(self):
+        return {
+            "Lati"
+            "Gouvernement": self.gouv,
+            "Région": self.reg,
+            "Rue": self.rue,
+            "Numéro": self.numR,
+            "Code Postal": self.codePostal
+
+        }
+
+
+class Demande(db.Document):
+    ref = db.StringField(primary_key=True)
+    date_dem = db.DateField(default=datetime.now)
+    # vehicule
+
+    type = db.StringField(required=True)
+    nbPls = db.IntField(required=True)
+    cap = db.FloatField(default=0.0)
+    date_res = db.DateField(required=True)
+
+    def to_json(self):
+        return {
+            "RéferenceDemande": self.ref,
+            "Date Demande": self.date_dem,
+            "Type de vehicule souhaité": self.type,
+            "Nombre de places": self.nbPls,
+            "Capacité": self.cap,
+            "Date Réservation": self.date_res
+
+        }
+
+    def to_json(self):
+        return {
+            "Demande": {
+                "Réference": self.ref,
+                "Email Client": self.email_cl,
+                "Date Demande": self.date,
+                "Objet du demande": self.obj,
+                "Urgente": self.urg,
+                "Traitée": self.done,
+            },
+            "Véhicule souhaité": {
+                "Avec chauffeur": self.chaff,
+                "Type": self.type,
+                "Nombre de places": self.nbPls,
+                "capacité": self.capacité,
+                "Date de réservation": self.capacité,
+            },
+            "Destination": {
+                "Gouvernement": self.gouv,
+                "Région": self.reg,
+                "Rue": self.rue,
+                "Numéro": self.numR,
+                "Code Postal": self.codePostal,
+            }
+        }
+
+
+class Reservation(db.Document):
+    # reservation
+    RefR = db.StringField(primary_key=True)
+    mat = ReferenceField("Vehicule")
+    date = db.DateField(required=True)
+    # Destination
+    gouv = db.StringField(required=True)
+    reg = db.StringField(required=True)
+    rue = db.StringField(required=True)
+    numR = db.IntField(required=True)
+    codePostal = db.IntField(required=True)
+    # affecation
+    chauff = ReferenceField("Chauffeur")
+    objet = db.StringField(required=True)
+    email_cl = db.StringField(required=True)
+    urg = db.BooleanField(required=True)
+    done = db.BooleanField(default=False)
+
+
 # Routes !
 # Reparation crud
 
-@app.route("/rep", methods=['POST', 'GET', 'DELETE'])
+@app.route("/reparation", methods=['POST', 'GET', 'DELETE'])
 def repar():
     if request.method == 'GET':
         Rs = []
@@ -241,19 +297,19 @@ def repar():
         return make_response("Suppression de tous les Réparations avec succées!", 200)
 
 
-@app.route("/onerep/crud", methods=['POST', 'GET', 'DELETE'])
+@app.route("/modifier/reparation", methods=['POST', 'GET', 'DELETE'])
 def one_rep():
     content = request.json
     if request.method == "GET":
         R = Reparation.objects(vh=content["Matricule"], En=content["codeEnt"]).first()
-        if R == "None":
+        if R == None:
             return make_response("Réparation inexistante", 201)
         else:
             return make_response(jsonify("Réparation : ", R.to_jsoon()), 200)
 
     elif request.method == "POST":
         R = Reparation.objects(vh=content["Matricule"], En=content["codeEnt"]).first()
-        if R == "None":
+        if R == None:
             return ("Réparation inexistante ! ", 201)
         else:
             n = Entretien.objects.count()
@@ -282,7 +338,7 @@ def one_rep():
 
 
 # Entretien crud
-@app.route("/ent", methods=['POST', 'GET', 'DELETE'])
+@app.route("/entretirn", methods=['POST', 'GET', 'DELETE'])
 def Ent():
     if request.method == 'GET':
         Es = []
@@ -305,7 +361,7 @@ def Ent():
         return make_response("Suppression de tous les Entretiens avec succées!", 200)
 
 
-@app.route("/oneent/crud", methods=['POST', 'GET', 'DELETE'])
+@app.route("/modifier/entretien", methods=['POST', 'GET', 'DELETE'])
 def one_ent():
     content = request.json
     if request.method == "GET":
@@ -332,7 +388,7 @@ def one_ent():
 
 
 # Vehicule crud
-@app.route("/vh", methods=['POST', 'GET', 'DELETE'])
+@app.route("/vehicule", methods=['POST', 'GET', 'DELETE'])
 def CrudVehicule():
     if request.method == "GET":
         Vs = []
@@ -341,26 +397,28 @@ def CrudVehicule():
         return make_response(jsonify("Tous les véhicules :", Vs), 200)
 
     elif request.method == "POST":
-
-        MAT = request.form.get("Matricule")
-        TYPE = request.form.get("Type de véhicules")
-        ANNEE = request.form.get("Année de Fabrication")
-        MARQ = request.form.get("Marque")
-        CONSO = request.form.get("Consomation Carburant (L)")
-        TYPC = request.form.get("Type Carburant")
-        POW = request.form.get("Power")
-        NBr = request.form.get("Nombre des Places")
-        CAP = request.form.get("Capacité (kg)")
-        DISPO = request.form.get("Disponibilité")
-        KILO = request.form.get("Kilométrage")
+        content = request.json
+        MAT = content["Matricule"]
+        TYPE = content["Type de véhicules"]
+        ANNEE = content["Année de Fabrication"]
+        MARQ = content["Marque"]
+        CONSO = content["Consomation Carburant (L)"]
+        TYPC = content["Type Carburant"]
+        POW = content["Power"]
+        NBr = content["Nombre des Places"]
+        CAP = content["Capacité (kg)"]
+        DISPO = content["Disponibilité"]
+        KILO = content["Kilométrage"]
+        TYP = content["TypePermis"]
+        MOT = content["Mot"]
         X = Vehicule.objects(mat=MAT).first()
-        if X == "None":
+        if X == None:
             V = Vehicule(mat=MAT, ty=TYPE, an=ANNEE, mr=MARQ,
                          conso=CONSO, tyC=TYPC,
                          powr=POW, cap=CAP, dispo=DISPO, kilo=KILO,
-                         nb=NBr)
+                         nb=NBr, tyP=TYP, motClé=MOT)
             V.save()
-            return make_response("Ajout avec succées ! ", 200)
+            return make_response("Ajout d'un véhicule avec succées", 200)
         else:
             return make_response("Véhicule existe déjà!", 201)
 
@@ -369,16 +427,17 @@ def CrudVehicule():
         return make_response("Suppression avec succées du tous les véhicules !", 200)
 
 
-@app.route("/onevh/crud", methods=['PUT', 'GET', 'DELETE'])
+@app.route("/modifier/vehicule", methods=['PUT', 'GET', 'DELETE'])
 def OneVehicule():
-    MAT = request.form.get("Matricule")
+    content = request.json
+    MAT = content["Matricule"]
 
     if request.method == "GET":
         V = Vehicule.objects(mat=MAT).first()
         if V == "None":
             return make_response("Vehicule inexistante", 201)
         else:
-            return make_response(jsonify("Véhicule : ", V.to_jsoon()), 200)
+            return make_response(jsonify("Véhicule : ", V), 200)
 
     elif request.method == "POST":
         TYPE = request.form.get("Type de véhicules")
@@ -391,20 +450,21 @@ def OneVehicule():
         CAP = request.form.get("Capacité")
         DISPO = request.form.get("Disponibilité")
         KILO = request.form.get("Kilométrage")
+        TYP = request.json("TypePermis")
         V = Vehicule.objects(mat=MAT).first()
-        if V == "None":
+        if V == None:
             return make_response("Vehicule inexistante", 201)
         else:
             V.update(mat=MAT, ty=TYPE, an=ANNEE, mr=MARQ,
                      conso=CONSO, tyC=TYPC,
                      powr=POW,
                      cap=CAP, dispo=DISPO, kilo=KILO,
-                     nb=NBr)
+                     nb=NBr, tyP=TYP)
             return make_response("Mise à jour avec sucées ! ", 200)
 
     elif request.method == "DELETE":
         V = Vehicule.objects(mat=MAT).first()
-        if V == "None":
+        if V == None:
             return make_response("Vehicule inexistante", 201)
         else:
             V.delete()
@@ -412,7 +472,7 @@ def OneVehicule():
 
 
 # Superviseur crud
-@app.route("/sv", methods=['POST', 'GET', 'DELETE'])
+@app.route("/superviseur", methods=['POST', 'GET', 'DELETE'])
 def CrudSuperviseur():
     if request.method == "GET":
         Vs = []
@@ -422,127 +482,180 @@ def CrudSuperviseur():
 
     elif request.method == "POST":
         content = request.json
-        X = Superviseur.objects(mail=content["Email"])
-        if X == "None":
+
+        x = Superviseur.objects(mail=content["Email"]).first()
+        if x == None:
             V = Superviseur(nom=content["Nom"], pre=content["prénom"], num=content["N° Télephone"],
                             dn=content["Date Naissance"], de=content["Date Embauche"],
-                            mail=content["Email"], adr=content["Adresse"])
-
-            V.set_pwd()
-            V.set_id()
-            U = Users(nom=content["Nom"], pre=content["prénom"], mail=content["Email"], pwd=V.pwd, id="Sup")
+                            mail=content["Email"], adr=content["Adresse"], pwd=content['pwd'])
+            U = User(ref=f"{V.nom}{V.pre}", idu="SUPP", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
             V.save()
             U.save()
             return make_response("Ajout avec succées !", 200)
         else:
-            return make_response("Superviseur Existe déjà!", 201)
+            return make_response("Superviseur existe déjà", 201)
+
     else:
         Superviseur.objects.delete()
-        U = Users.objects(id="Sup")
-        for u in U:
+        for u in User.objects(idu="SUPP"):
             u.delete()
         return make_response("Suppression de tous les superviseurs du systéme!", 200)
 
 
-@app.route("/onesv/crud", methods=['GET', 'POST', 'DELETE'])
+@app.route("/modifier/superviseur", methods=['GET', 'POST', 'DELETE'])
 def OneSuperviseur():
     content = request.json
 
     if request.method == "GET":
         V = Superviseur.objects(mail=content["Email"]).first()
-        if V == "None":
+        if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
-            return make_response(jsonify({"Superviseur : ": V.to_jsoon()}), 200)
+            return make_response(jsonify("Superviseur : ", V), 200)
 
     elif request.method == "PUT":
         V = Superviseur.objects(mail=content["Email"]).first()
-        if V == "None":
+        if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
             V.update(nom=content["Nom"], pre=content["prénom"], num=content["N° Télephone"],
                      dn=content["Date Naissance"], de=content["Date Embauche"],
                      mail=content["Email"], adr=content["Adresse"])
-            U = Users.objects(mail=content["Email"]).first()
-            U.update(nom=content["Nom"], pre=content["prénom"], mail=content["Email"], pwd=V.pwd, id="Sup")
+            U = User.objects(mail=content["Email"]).first()
+            U.update(nom=content["Nom"], mail=content["Email"], pre=content["prénom"])
 
             return make_response("Mise à jour avec succées! ", 200)
 
     else:
         V = Superviseur.objects(mail=content["Email"]).first()
-        if V == "None":
+        if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
             V.delete()
-            U = Users.objects(mail=content["Email"]).first
+            U = User.objects(mail=content["Email"]).first
             U.delete()
             return make_response("Suppression du superviseur avec succées  !", 200)
 
 
+@app.route("/users", methods=['GET' , 'DELETE'])
+def user():
+    if request.method == "GET":
+        us = []
+        for u in User.objects():
+            us.append(u.to_json())
+
+        if not us == []:
+            return make_response(jsonify("Users : ", us), 200)
+        else:
+            return make_response("Aucun utilisateur dans le systéme ", 201)
+    else :
+        User.objects.delete()
+
+
 # Chauffeur crud
-@app.route("/ch", methods=['POST', 'GET', 'DELETE'])
+@app.route("/chauffeur", methods=['POST', 'GET', 'DELETE'])
 def CrudChauffeur():
     if request.method == "GET":
         Vs = []
         for v in Chauffeur.objects():
             Vs.append(v.to_json())
-        return make_response(jsonify(Vs), 200)
+        if Vs == []:
+            return make_response("Aucun chauffeur dans le systéme", 201)
+        else:
+            return make_response(jsonify(Vs), 200)
 
     elif request.method == "POST":
         content = request.json
         X = Chauffeur.objects(mail=content["Email"]).first()
-        if X == "None":
-            return make_response("Chauffeur existe déjà!", 201)
-        else:
-
+        if X == None:
             V = Chauffeur(nom=content["Nom"], pre=content["prénom"], num=content["N° Télephone"],
                           dn=content["Date Naissance"], de=content["Date Embauche"],
-                          mail=content["Email"], adr=content["Adresse"], nomSup=content["Nom Superviseur"])
-            V.set_pwd()
-            U = Users(nom=content["Nom"], pre=content["prénom"], mail=content["Email"], pwd=V.pwd, id="Chauff")
-            U.save()
-            V.set_id()
+                          mail=content["Email"], adr=content["Adresse"], pwd=content['pwd'], typ=content["Permis"])
+            U = User(ref=f"{V.nom}{V.pre}", idu="CHAUFF", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
             V.save()
+            U.save()
             return make_response("Ajout d'un chauffeur avec succées", 200)
+        else:
+            return make_response("Chauffeur existe déjà!", 201)
+
     elif request.method == "DELETE":
         Chauffeur.objects.delete()
-        U = Users.objects(id="Chauff")
-        for u in U:
+        for u in User.objects(idu="CHAUFF"):
             u.delete()
         return make_response("Suppression de tous les Chauffeurs avec succées", 200)
 
 
-@app.route("/onech/crud", methods=['POST', 'GET', 'DELETE'])
+@app.route("/modifier/chauffeur", methods=['POST', 'GET', 'DELETE'])
 def OneChauffeur():
     content = request.json
     if request.method == "GET":
         V = Chauffeur.objects(mail=content["Email"]).first()
-        if V == "None":
+        if V == None:
             return make_response("Chauffeur inexistant ! ", 201)
         else:
-            return make_response(jsonify({"Your Data ": V.to_jsoon()}), 200)
+            return make_response(jsonify("Your Data ", V), 200)
     elif request.method == "POST":
         V = Chauffeur.objects(mail=content["Email"]).first()
-        if V == "None":
+        if V == None:
             return make_response("Chauffeur inexistant ! ", 201)
         else:
-            U = Users.objects(mail=content["Email"]).first()
-
-            V.update(nom=content["Nom"], pre=content["prénom"], num=content["N° Télephone"],
+            U = User.objects(mail=content["Email"]).first()
+            V.update(nom=content["Nom"], pre=content["prénom"],
+                     num=content["N° Télephone"],
                      dn=content["Date Naissance"], de=content["Date Embauche"],
                      mail=content["Email"], adr=content["Adresse"])
-            U.update(nom=content["Nom"], pre=content["prénom"], mail=content["Email"], pwd=V.pwd)
+            U.update(nom=content["Nom"], mail=content["Email"], pre=content["prénom"])
 
             return make_response("Mise à jour d'un chauffeur avec succées ! ", 200)
     else:
         V = Chauffeur.objects(mail=content["Email"]).first()
-        if V == "None":
+        if V == None:
             return make_response("Chauffeur inexistant ! ", 201)
         else:
             V.delete()
-            U = Users.objects(mail=content["Email"]).first
+            U = User.objects(mail=content["Email"]).first
             U.delete()
             return make_response("Suppression du chauffeur avec succées !", 200)
+
+
+# Demande Crud
+@app.route("/demande", methods=['POST', 'GET', 'DELETE'])
+def CrudDemande():
+    if request.method == "GET":
+        Ds = []
+        for d in Demande.objects():
+            Ds.append(d.to_json())
+        return make_response(jsonify("Tous les demandes  :", Ds), 200)
+
+    elif request.method == "POST":
+        content = request.json
+        D = Demande(obj=content["Objet"],
+                    type=content["type"], nbPls=content["nb"], chaff=content["chauffeur"],
+                    capacité=content["cap"], date_res=content["dateR"])
+        D.save()
+        Vs = []
+        for v in Vehicule.objects(ty=content["type"], nb=content["nb"], cap=content["cap"], dispo=True):
+            r = Reservation.objects(mat=v.mat, date=content["dateR"])
+            if r == None:
+                Vs.append(v.to_json())
+        return make_response(jsonify("Véhicules recommandés ", Vs), 200)
+    else:
+        Demande.objects.delete()
+
+
+@app.route("reservation" , methods=['GET' , 'POST' , 'DELETE'])
+def resv():
+    if request.method =="GET":
+        Rs = []
+        for r in Reservation.objects():
+            Rs.append(r.to_json())
+        return make_response(jsonify("Tous les réservations : " , Rs) , 200)
+
+    elif request.method == "POST":
+        R = Reservation ()
+        R.save()
+    else :
+        Reservation.objects.delete()
 
 
 if __name__ == '__main__':
