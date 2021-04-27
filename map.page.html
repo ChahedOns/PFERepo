@@ -1,0 +1,18 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-title>map</ion-title>
+    <ion-buttons slot="end">
+      <ion-button  (click)="addMarker()">
+        <ion-icon slot="icon-only" name="add"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content [fullscreen]="true">
+  <div class="map-wrapper">
+    <div class="map-border">
+      <div id="map"></div>
+    </div>
+  </div>
+</ion-content>
