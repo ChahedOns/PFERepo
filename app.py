@@ -1,14 +1,13 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib import request
-
 from PIL import Image
 import bson
 import folium
+import json
 from flask_mail import Mail, Message
 from flask import Flask, make_response, request, jsonify
 from flask_mongoengine import MongoEngine
 from mongoengine import EmbeddedDocumentListField, ReferenceField, EmbeddedDocumentField, ListField
-
 from APIConst import db_name, user_pwd, secret_key
 
 # configurations !
@@ -188,11 +187,9 @@ class Destination(db.Document):
     ref = db.StringField(primary_key=True)
     lat = db.FloatField(required=True)
     lar = db.FloatField(required=True)
-    gouv = db.StringField(required=True)
     reg = db.StringField(required=True)
+    dept = db.StringField(required=True)
     rue = db.StringField(required=True)
-    numR = db.IntField(required=True)
-    codePostal = db.IntField(required=True)
 
     def to_json(self):
         return {
@@ -204,6 +201,49 @@ class Destination(db.Document):
             "Code Postal": self.codePostal
 
         }
+
+    # def set_coordinates(self):
+
+
+class Region(db.Document):
+    id_reg = db.StringField(primary_key=True)
+    code_reg = db.StringField()
+    nom_reg = db.StringField()
+    slug_reg = db.StringField()
+
+
+class Dept(db.Document):
+    id_dept = db.IntField(primary_key=True)
+    code_reg = db.StringField()
+    nom_reg = db.StringField()
+    slug_reg = db.StringField()
+    code_dept = db.StringField(unique=True)
+    nom_dept = db.StringField()
+    slug_dept = db.StringField()
+
+    def get_nomD(self):
+        return self.nom_dept
+
+    def get_nomR(self):
+        return self.nom_reg
+
+    def get_codeD(self):
+        return self.code_dept
+
+    def get_slugD(self):
+        return self.slug_dept
+
+    def get_slugR(self):
+        return self.slug_reg
+
+
+class Cities(db.Document):
+    id_cite = db.IntField(primary_key=True)
+    dept = db.StringField(required=True)
+    nom_cite = db.StringField(required=True)
+    slug_cite = db.StringField(required=True)
+    lat = db.FloatField(required=True)
+    lng = db.FloatField(required=True)
 
 
 class Demande(db.Document):
@@ -260,19 +300,135 @@ class Reservation(db.Document):
     # reservation
     RefR = db.StringField(primary_key=True)
     mat = ReferenceField("Vehicule")
-    date = db.DateField(required=True)
+    datedebR = db.DateField(required=True)
+    datefinR = db.DateField()
+
     # Destination
-    gouv = db.StringField(required=True)
+    dept = db.StringField(required=True)
     reg = db.StringField(required=True)
     rue = db.StringField(required=True)
-    numR = db.IntField(required=True)
-    codePostal = db.IntField(required=True)
+
     # affecation
-    chauff = ReferenceField("Chauffeur")
+    chauff = db.BooleanField(required=True)
     objet = db.StringField(required=True)
     email_cl = db.StringField(required=True)
     urg = db.BooleanField(required=True)
     done = db.BooleanField(default=False)
+    id_chauff = db.IntField()
+
+
+class Affectation(db.Document):
+    id_aff = db.IntField(primary_key=True)
+    mat = db.StringField(required=True)
+    # Chauffeur
+    id_chauff = db.IntField()
+    chauff_mail = db.StringField(required=True)
+    # Trajet
+    des_lan = db.FloatField(required=True)
+    des_lat = db.FloatField(required=True)
+    reg = db.StringField(required=True)
+    dept = db.StringField(required=True)
+    rue = db.StringField(required=True)
+    trajet = db.StringField()
+    coût_carb = db.FloatField()
+    # Reservation
+    dateDeb = db.DateField()
+    dateFin = db.DateField()
+    obj = db.StringField()
+    cl = db.StringField()
+
+
+class Historique(db.Document):
+    id_op = db.IntField(primary_key=True)
+    mat = db.StringField(required=True)
+    op = db.StringField()
+    description = db.StringField()
+    date = db.DateField(default=datetime.now())
+
+    def to_json(self):
+        return {
+            "id opération ": self.id_op,
+            "Matricule": self.mat,
+            "Opération": self.op,
+            "Description": self.description,
+            "Date opération": self.date
+        }
+
+
+# must be done only one time !!!
+
+@app.route("/reg", methods=['POST', 'GET'])
+def set_reg():
+    if request.method == "POST":
+        with open('json/regions.json', 'r') as f:
+            data = json.load(f)
+            i = 0
+            while i < len(data):
+                R = Region(id_reg=int(data[i]["id"]), code_reg=data[i]["code"], nom_reg=data[i]["name"],
+                           slug_reg=data[i]["slug"])
+                R.save()
+                i = i + 1
+            return make_response("Tous les régions ajoutées avec succés", 200)
+    else:
+        Ls = []
+        for r in Region.objects():
+            Ls.append(r)
+        if Ls == []:
+            return make_response("Aucune region  dans le systéme!", 201)
+        else:
+            return make_response(jsonify("tous les regions sont : ", Ls), 200)
+
+
+@app.route("/dept", methods=["POST", 'GET'])
+def set_dept():
+    if request.method == "POST":
+        with open('json/departments.json', 'r') as f:
+            data = json.load(f)
+            i = 0
+            while i < len(data):
+                R = Region.objects(code_reg=data[i]["region_code"]).first()
+                D = Dept(id_dept=int(data[i]["id"]), code_reg=R.code_reg, code_dept=data[i]["code"],
+                         nom_dept=data[i]["name"], slug_dept=data[i]["slug"], nom_reg=R.nom_reg, slug_reg=R.slug_reg)
+                D.save()
+                i = i + 1
+
+            return make_response("Ajout de tous les départements avec succés", 200)
+    else:
+        Ls = []
+        for r in Dept.objects():
+            Ls.append(r)
+        if Ls == []:
+            return make_response("Aucun departement dans le systéme!", 201)
+        else:
+            return make_response(jsonify("tous les departement sont : ", Ls), 200)
+
+
+@app.route("/cite", methods=["POST", 'GET'])
+def set_cite():
+    if request.method == "POST":
+        with open('json/cities.json', 'r') as f:
+            data = json.load(f)
+            i = 0
+            while i < len(data):
+                D = Dept.objects(code_dept=data[i]["department_code"]).first
+                if D == None:
+                    return make_response("Departement inexistant", 201)
+                else:
+                    C = Cities(id_cite=int(data[i]["id"]), dept=data[i]["department_code"], nom_cite=data[i]["name"],
+                               lat=float(data[i]["gps_lat"]), slug_cite=data[i]["slug"],
+                               lng=float(data[i]["gps_lng"]))
+                    C.save()
+                i = i + 1
+
+            return make_response("Ajout de tous les départements avec succés", 200)
+    else:
+        Ls = []
+        for r in Cities.objects():
+            Ls.append(r)
+        if Ls == []:
+            return make_response("Aucun cite dans le systéme!", 201)
+        else:
+            return make_response(jsonify("tous les cites sont : ", Ls), 200)
 
 
 # Routes !
@@ -308,6 +464,13 @@ def repar():
                 else:
                     et = False
                 V.update(etat=et, dispo=et)
+                H = Historique(mat=mat, op=f"Nouvelle réparation {E.libelle}", date=datetime.now())
+                max = 0
+                for c in Historique.objects:
+                    if c.id > max:
+                        max = c.id
+                H.id_op = max + 1
+                H.save()
                 return make_response("Reparation ajoutée avec succées ", 200)
 
             else:
@@ -317,6 +480,13 @@ def repar():
             r.delete()
         for v in Vehicule.objects():
             v.update(etat=False, dispo=False)
+            H = Historique(mat=v.mat, op=f"Suppression de tous les réparations de  {v.mat}", date=datetime.now())
+            max = 0
+            for c in Historique.objects:
+                if c.id > max:
+                    max = c.id
+            H.id_op = max + 1
+            H.save()
         return make_response("Suppression de tous les Réparations avec succées!", 200)
 
 
@@ -342,15 +512,28 @@ def rep_vec(mat=None):
                 for r in Reparation.objects(vh=mat):
                     r.delete()
                     V = Vehicule.objects(mat=mat).first()
+                    H = Historique(mat=mat, op=f"Suppression de tous les réparations de  {mat}", date=datetime.now())
+                    max = 0
+                    for c in Historique.objects:
+                        if c.id > max:
+                            max = c.id
+                    H.id_op = max + 1
+                    H.save()
                     V.update(etat=False, dispo=False)
-
                 return make_response("Suppression terminée! ", 200)
             else:
                 for r in Reparation.objects(vh=matricule):
                     r.delete()
                     V = Vehicule.objects(mat=matricule).first()
                     V.update(etat=False, dispo=False)
-
+                    H = Historique(mat=matricule, op=f"Suppression de tous les réparations de  {matricule}",
+                                   date=datetime.now())
+                    max = 0
+                    for c in Historique.objects:
+                        if c.id > max:
+                            max = c.id
+                    H.id_op = max + 1
+                    H.save()
                 return make_response("Suppression effectuée avec succées  ! ", 200)
 
 
@@ -407,6 +590,13 @@ def rep_one():
             else:
                 et = False
             V.update(etat=et, dispo=et)
+            H = Historique(mat=V.mat, op=f"Réparation supprimé  {V.mat}", date=datetime.now())
+            max = 0
+            for c in Historique.objects:
+                if c.id > max:
+                    max = c.id
+            H.id_op = max + 1
+            H.save()
             return make_response("Suppression effectuée avec succées  ! ", 200)
     else:
         if R == None:
@@ -415,6 +605,13 @@ def rep_one():
             mat = request.form.get("matricule")
             code = request.form.get("codeent")
             R.update(vh=mat, En=code, date=datetime.now())
+            H = Historique(mat=mat, op=f"Mise a jour d'une Réparation  {mat}")
+            max = 0
+            for c in Historique.objects:
+                if c.id > max:
+                    max = c.id
+            H.id_op = max + 1
+            H.save()
             return make_response("Mise à jour avec succées", 200)
 
 
@@ -500,6 +697,13 @@ def CrudVehicule():
                          powr=POW, cap=CAP, dispo=DISPO, kilo=KILO,
                          nb=NBr, tyP=TYP, motClé=MOT)
             V.save()
+            H = Historique(mat=V.mat, op=f"Creation d'une nouvelle véhicule {V.mat}", date=datetime.now())
+            max = 0
+            for c in Historique.objects:
+                if c.id > max:
+                    max = c.id
+            H.id_op = max + 1
+            H.save()
             return make_response("Ajout d'un véhicule avec succées", 200)
         else:
             return make_response("Véhicule existe déjà!", 201)
@@ -542,6 +746,13 @@ def OneVehicule():
                      powr=POW,
                      cap=CAP, dispo=DISPO, kilo=KILO,
                      nb=NBr, tyP=TYP, motClé=MOT)
+            H = Historique(mat=V.mat, op=f"Mise a jour d'un véhicule {V.mat}")
+            max = 0
+            for c in Historique.objects:
+                if c.id > max:
+                    max = c.id
+            H.id_op = max + 1
+            H.save()
             return make_response("Mise à jour avec sucées ! ", 200)
 
     elif request.method == "DELETE":
@@ -549,6 +760,14 @@ def OneVehicule():
             return make_response("Vehicule inexistante", 201)
         else:
             rep_vec(MAT)
+
+            H = Historique(mat=V.mat, op=f"Suppression d'une nouvelle véhicule {V.mat}", date=datetime.now())
+            max = 0
+            for c in Historique.objects:
+                if c.id > max:
+                    max = c.id
+            H.id_op = max + 1
+            H.save()
             V.delete()
             return make_response("Suppression avec Succés!", 200)
 
@@ -697,6 +916,7 @@ def CrudChauffeur():
                 if c.id > max:
                     max = c.id
             V.id = max + 1
+
             V.save()
             U.save()
 
@@ -767,26 +987,270 @@ def CrudDemande():
                     capacité=content["cap"], date_res=content["dateR"])
         D.save()
         Vs = []
-        for v in Vehicule.objects(ty=content["type"], nb=content["nb"], cap=content["cap"], dispo=True):
-            r = Reservation.objects(mat=v.mat, date=content["dateR"])
-            if r == None:
-                Vs.append(v.to_json())
-                return make_response(jsonify("Véhicules recommandés ", Vs), 200)
+        X=Vehicule.objects(ty=content["type"], nb=content["nb"], cap=content["cap"], dispo=True)
+        if X == None :
+            return make_response("Votre demande est prise en considération on vous notifie lorsque elle est prête",200)
+        else :
+            for v in X:
+                r = Reservation.objects(mat=v.mat)
+                if r == None:
+                    Vs.append(v.to_json())
+                    return make_response(jsonify("Véhicules recommandés ", Vs), 200)
+
     else:
         Demande.objects.delete()
 
 
-@app.route("/reservation", methods=['GET', 'POST', 'DELETE'])
-def reserv():
+@app.route("/histo", methods=['GET', 'DELETE'])
+def histo():
+    if request.method == "GET":
+        Vs = []
+        for h in Historique.objects():
+            Vs.append(h)
+        if Vs == []:
+            return make_response("Rien à afficher", 201)
+        else:
+            return make_response(jsonify(Vs), 200)
+    else:
+        Historique.objects.delete()
+        return make_response("Suppression de l'historique", 200)
+
+
+@app.route("/reservation/", methods=['GET', 'POST', 'DELETE'])
+def reservation():
+    mat = request.args.get("mat")
     if request.method == "GET":
         Rs = []
-        for r in Reservation.objects():
-            Rs.append(r.to_json())
-        return make_response(jsonify("Tous les réservations : ", Rs), 200)
+        for r in Affectation.objects():
+            Rs.append(r)
+        if Rs == []:
+            return make_response("Rien a afficher", 201)
+        else:
+            return make_response(jsonify("Tous les réservations : ", Rs), 200)
 
     elif request.method == "POST":
-        R = Reservation()
-        R.save()
+        dateD = request.form.get("DD")
+        dateF = request.form.get("DF")
+        # destination
+        dept = request.form.get("dept")
+        reg = request.form.get("reg")
+        rue = request.form.get("rue")
+        # affectation
+        chauff = request.form.get("ch")
+        obj = request.form.get("obj")
+        mail = request.form.get("mail")
+        urg = request.form.get("urgent")
+        done = request.form.get("done")
+        R = Reservation(RefR=f"{mat}|{dateD}", mat=mat, datedebR=dateD, datefinR=dateF, reg=reg, dept=dept, rue=rue,
+                        chauff=chauff, objet=obj, email_cl=mail, urg=urg)
+
+        V = Vehicule.objects(mat=mat).first()
+        if V == None:
+            return make_response("Car don't existe")
+        else:
+
+            V.update(dispo=False)
+            H = Historique(mat=mat,
+                           op=f"Réservation d'une nouvelle véhicule {mat} pour le {dateD} jusqu'à le {dateF}",
+                           date=datetime.now())
+            max = 0
+            for c in Historique.objects:
+                if c.id > max:
+                    max = c.id
+            H.id_op = max + 1
+            H.save()
+            R.save()
+            ch = Affectation.objects(reg=reg)
+            # chercher si ily une affectation dans la même region
+            if ch == None:
+                chauff = Chauffeur.objects(dispo=True).first()
+                A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id, chauff_mail=chauff.mail,
+                                dateDeb=R.datedebR
+                                , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+
+                C = Cities.objects(slug_cite=R.rue)
+                D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat, lar=C.lng)
+                A.des_lan = D.lar
+                A.des_lat = D.lat
+                max = 0
+                for a in Affectation.objects():
+                    if a.id_aff > max:
+                        max = a.id_aff
+                A.id_aff = max + 1
+                A.save()
+                D.save()
+                chauff.update(dispo=False)
+                return make_response("Affectation effectuée pas aucune région commune", 200)
+            else:  # test dans le même dept
+                ds = []
+                for a in ch:
+                    if a.dept == dept:
+                        ds.append(a)
+                if ds == []:  # Aucune affectation dans le même dept
+                    ok = 1
+                    for chauf in ch:  # je cherche les chauffeurs du même region !
+                        i = chauf
+                        if Affectation.objects(id_chauff=chauf.id_chauff).count() < 3:
+                            ok = 0
+                            break
+                    if ok == 0:
+                        A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=i.id_chauff,
+                                        chauff_mail=i.chauff_mail,
+                                        dateDeb=R.datedebR
+                                        , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+
+                        C = Cities.objects.get(slug_cite=rue)
+                        D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat,
+                                        lar=C.lng)
+                        A.des_lan = D.lar
+                        A.des_lat = D.lat
+                        max = 0
+                        for a in Affectation.objects():
+                            if a.id_aff > max:
+                                max = a.id_aff
+                        A.id_aff = max + 1
+                        A.save()
+                        D.save()
+                        return make_response("Affectation effectuée mm region", 200)
+                    else:
+                        chauff = Chauffeur.objects(dispo=True).first()
+                        if chauff == None:
+                            return make_response(
+                                    "Votre Réservation est en cours "
+                                    "de traitement vous allez être notifier dés quelle soit prête ")
+                        else :
+                            A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id,
+                                                chauff_mail=chauff.mail,
+                                                dateDeb=R.datedebR
+                                                , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+
+                            C = Cities.objects.get(slug_cite=rue)
+                            D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
+                                                lat=C.lat, lar=C.lng)
+                            A.des_lan = D.lar
+                            A.des_lat = D.lat
+                            max = 0
+                            for a in Affectation.objects():
+                                if a.id_aff > max:
+                                    max = a.id_aff
+                            A.id_aff = max + 1
+                            A.save()
+                            D.save()
+                            chauff.update(dispo=False)
+                else:  # test dans le même rue
+                    rs = []
+                    for l in rs:
+                        if (l.rue == rue):  # je cherche un chauffeur
+                            rs.append(l)
+                    if rs == []:  # il y pas le meme rue
+                        ok = 1
+                        for l in ds:
+                            i = l
+                            if Affectation.objects(id_chauff=l.id_chauff).count() < 3:
+                                ok = 0
+                                break
+                        if ok == 0:
+                            A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=i.id_chauff,
+                                            chauff_mail=i.chauff_mail,
+                                            dateDeb=R.datedebR
+                                            , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+                            C = Cities.objects.get(slug_cite=rue)
+                            D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
+                                            lat=C.lat, lar=C.lng)
+                            A.des_lan = D.lar
+                            A.des_lat = D.lat
+                            max = 0
+                            for a in Affectation.objects():
+                                if a.id_aff > max:
+                                    max = a.id_aff
+                            A.id_aff = max + 1
+                            A.save()
+                            D.save()
+                            return make_response("Affectation effectuée mm dept", 200)
+                        else:
+                            chauff = Chauffeur.objects(dispo=True).first()
+                            if chauff == None:
+                                return make_response(
+                                    "Votre Réservation est en cours "
+                                    "de traitement vous allez être notifier dés quelle soit prête ")
+                            else:
+                                chauff=Chauffeur.objects(dispo=True)
+                                if chauff == None:
+                                    return make_response("Vous alllez etre notifier des que votre reservation soit prete",200)
+                                else:
+                                    A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id,
+                                                    chauff_mail=chauff.mail,
+                                                    dateDeb=R.datedebR
+                                                    , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+
+                                    C = Cities.objects.get(slug_cite=rue)
+                                    D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
+                                                    lat=C.lat, lar=C.lng)
+                                    A.des_lan = D.lar
+                                    A.des_lat = D.lat
+                                    max = 0
+                                    for a in Affectation.objects():
+                                        if a.id_aff > max:
+                                            max = a.id_aff
+                                    A.id_aff = max + 1
+                                    A.save()
+                                    D.save()
+                                    chauff.update(dispo=False)
+                                    return make_response("Ajout affectation avec nv chauffeur 1",200)
+                    else:
+                        i = 0
+                        ok = 1
+                        for r in rs:
+                            i = r
+                            if Affectation.objects(id_chauff=r.id_chauff).count() < 3:
+                                ok = 0
+                                break
+                        if ok == 0:
+                            A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=i.id_chauff,
+                                            chauff_mail=i.chauff_mail,
+                                            dateDeb=R.datedebR
+                                            , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+                            C = Cities.objects.get(slug_cite=rue)
+                            D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
+                                            lat=C.lat, lar=C.lng)
+                            A.des_lan = D.lar
+                            A.des_lat = D.lat
+                            max = 0
+                            for a in Affectation.objects():
+                                if a.id_aff > max:
+                                    max = a.id_aff
+                            A.id_aff = max + 1
+                            A.save()
+                            D.save()
+                            return make_response("Affectation effectuée mm rue", 200)
+
+                        else:
+                            chauff = Chauffeur.objects(dispo=True).first()
+                            if chauff == None:
+                                return make_response(
+                                    "Votre Réservation est en cours "
+                                    "de traitement vous allez être notifier dés quelle soit prête ")
+                            else :
+                                A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id,
+                                                chauff_mail=chauff.mail,
+                                                dateDeb=R.datedebR
+                                                , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+
+                                C = Cities.objects.get(slug_cite=rue)
+                                D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
+                                                lat=C.lat, lar=C.lng)
+                                A.des_lan = D.lar
+                                A.des_lat = D.lat
+                                max = 0
+                                for a in Affectation.objects():
+                                    if a.id_aff > max:
+                                        max = a.id_aff
+                                A.id_aff = max + 1
+                                A.save()
+                                D.save()
+                                chauff.update(dispo=False)
+                                return make_response("Affectation effectuée nv chauff 3", 200)
+
     else:
         Reservation.objects.delete()
 
