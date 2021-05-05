@@ -1,0 +1,49 @@
+Réparation : 
+-ALL:
+	path GET http://127.0.0.1/reparation  : 
+	   Affiche tous les réparations 
+	path POST http://127.0.0.1/reparation (form param : matricule , code entretien , date ) 
+	   Ajoute une nouvelle réparation 
+	path DELETE http://127.0.0.1/reparation 
+	  Supprime tous les réparations
+
+-Par véhicule (nesta3mlouuha kif neheb nlawej ala les reparation mta vehicule mouaayen eli bch naadilha l matricule en parametre fel request ) : 
+	path GET http://127.0.0.1/reparation/vehicule/
+(?matricule=param) (nesta3mlouuha kif neheb nlawej ala les reparation mta vehicule mouaayna) 
+	    Affiche tous les réparations d'un véhicule dont la matricule = matricule 
+	path DELETE http://127.0.0.1/reparation/vehicule/
+parametre = ?matricule=param
+	    Supprime tous les réparations d'un vehicule
+
+-Par code (nestaamlouhomkif nheb nlaweej ala les reparations mta entretien mouaayen )  : 
+
+	path GET http://127.0.0.1/reparation/entretien/
+(?codeent=....) (nesta3mlouuha kif neheb nlawej ala les reparation mta vehicule mouaayna) 
+	    Affiche tous les réparations d'un entretien
+	path DELETE http://127.0.0.1/reparation/entretien/
+parametre = (?codeent=....)
+	    Supprime tous les réparations d'un entretien
+-Par réference (nestaamlouha kif bch naamlo modification mtaa kaaba 
+wahda tji dima baad maestaamel ya par code ya par vehicule  )
+	exemple : nheb naamel mise a jour taa reparation mta mouteur mtaa vehicule 125Tu1230
+	mlowel njib GET http://127.0.0.1/reparation/vehicule/
+paramet?matricule=125Tu1230
+	w baaed nakhtar wa7da menhom eli bch naccédilha wahdha w naml modification 
+
+	 path GET http://127.0.0.1:5000/reparation/
+param?ref=....
+	   affiche les données d'une reparation specifique dont la reference = ref
+	 path POST http://127.0.0.1:5000/reparation/
+param=?ref=....
+	   Mettre à jour une reparation specifique ( matricule + code entretien) 
+	 path DELETE http://127.0.0.1:5000/reparation/?ref=....
+	   Supprimer une reparation spécifique 
+Benesba l entretien , vehicule , chauffeur superviseur  le meme principe 
+
+Entretien 
+	path http://127.0.0.1/entretien bel GET : affichage |POST : insert | delete : delete all 
+	path http://127.0.0.1/entretien/ : un seul entretien  w taadi l code en parametre  
+	kifkif vehicule (parametre :matricule ),chauffeur et superviseur (parametre:id)
+						
+	
+
