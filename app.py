@@ -1327,32 +1327,37 @@ def reservation():
             F = Affectation.objects(mat=mat, reg=reg).first()
             if F == None:
                 V.update(dispo=False)
-                chauff = Chauffeur.objects(dispo=True).first()
-                A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, chauff_mail=chauff.mail, id_chauff=chauff.id,
-                                dateDeb=R.datedebR
-                                , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+                permis = V.tyP
+                chff = Chauffeur.objects(dispo=True)
+                for chauff in chff :
+                    if permis in chauff.typ == True:
+                        A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, chauff_mail=chauff.mail, id_chauff=chauff.id,
+                                        dateDeb=R.datedebR
+                                        , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
 
-                C = Cities.objects.get(slug_cite=R.rue)
-                D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat, lar=C.lng)
-                A.des_lan = D.lar
-                A.des_lat = D.lat
-                max = 0
-                for a in Affectation.objects():
-                    if a.id_aff > max:
-                        max = a.id_aff
-                A.id_aff = max + 1
-                A.save()
-                D.save()
-                U = User.objects.get(mail=chauff.mail)
-                N = Notification(id_user=U.ref, obj="Affectation",
-                                 text=f"Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
-                max = 0
-                for n in Notification.objects():
-                    if n.id > max:
-                        max = n.id
-                N.id = max
-                N.save()
-                chauff.update(dispo=False)
+                        C = Cities.objects.get(slug_cite=R.rue)
+                        D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat, lar=C.lng)
+                        A.des_lan = D.lar
+                        A.des_lat = D.lat
+                        max = 0
+                        for a in Affectation.objects():
+                            if a.id_aff > max:
+                                max = a.id_aff
+                        A.id_aff = max + 1
+                        A.save()
+                        D.save()
+                        U = User.objects.get(mail=chauff.mail)
+                        N = Notification(id_user=U.ref, obj="Affectation",
+                                         text=f"Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
+                        max = 0
+                        for n in Notification.objects():
+                            if n.id > max:
+                                max = n.id
+                        N.id = max
+                        N.save()
+                        chauff.update(dispo=False)
+                        break
+
                 return make_response("Nouvelle Affectation effectuée ", 200)
 
             else:
