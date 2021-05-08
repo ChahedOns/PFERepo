@@ -1,14 +1,19 @@
+import webbrowser
 from datetime import datetime, timedelta
 from urllib import request
 from PIL import Image
 import bson
 import folium
+import numpy as np
+import math
+from collections import namedtuple
 import json
 from flask_mail import Mail, Message
-from flask import Flask, make_response, request, jsonify
+from flask import Flask, make_response, request, jsonify, render_template
 from flask_mongoengine import MongoEngine
 from mongoengine import EmbeddedDocumentListField, ReferenceField, EmbeddedDocumentField, ListField
 from APIConst import db_name, user_pwd, secret_key
+from pyroutelib3 import Router
 
 # configurations !
 app = Flask(__name__)
@@ -26,6 +31,8 @@ app.config.update(dict(
 mail = Mail(app)
 db = MongoEngine()
 db.init_app(app)
+
+pnt_dep = (48.866667, 2.333333)
 
 
 class Reparation(db.Document):
@@ -155,14 +162,15 @@ class Superviseur(db.Document):
 
 
 class Client(db.Document):
-    cin = db.StringField(length=8)
+    id = db.IntField(primary_key=True)
     nom = db.StringField(required=True)
     pre = db.StringField(required=True)
     num = db.StringField(required=True, length=8)
     dn = db.DateField(required=True)
-    mail = db.StringField(required=True, primary_key=True)
+    mail = db.StringField(required=True)
     pwd = db.StringField(required=True)
     adr = db.StringField(required=True)
+    imgProfil = db.ImageField(thumbnail_size=(150, 150, False))
 
 
 class User(db.Document):
@@ -247,7 +255,7 @@ class Cities(db.Document):
 
 
 class Demande(db.Document):
-    ref = db.StringField(primary_key=True)
+    id_dem = db.IntField(primary_key=True)
     date_dem = db.DateField(default=datetime.now)
     # vehicule
     mail = db.StringField()
@@ -256,44 +264,11 @@ class Demande(db.Document):
     cap = db.FloatField(default=0.0)
     date_res = db.DateField(required=True)
     mot = ["Location", "Livraison", "Maintenance", "Transportation", "Déplacement"]
-    objet = db.StringField(choice=mot, required=True)
-
-    def to_json(self):
-        return {
-            "RéferenceDemande": self.ref,
-            "Date Demande": self.date_dem,
-            "Type de vehicule souhaité": self.type,
-            "Nombre de places": self.nbPls,
-            "Capacité": self.cap,
-            "Date Réservation": self.date_res
-
-        }
-
-    def to_json(self):
-        return {
-            "Demande": {
-                "Réference": self.ref,
-                "Email Client": self.email_cl,
-                "Date Demande": self.date,
-                "Objet du demande": self.obj,
-                "Urgente": self.urg,
-                "Traitée": self.done,
-            },
-            "Véhicule souhaité": {
-                "Avec chauffeur": self.chaff,
-                "Type": self.type,
-                "Nombre de places": self.nbPls,
-                "capacité": self.capacité,
-                "Date de réservation": self.capacité,
-            },
-            "Destination": {
-                "Gouvernement": self.gouv,
-                "Région": self.reg,
-                "Rue": self.rue,
-                "Numéro": self.numR,
-                "Code Postal": self.codePostal,
-            }
-        }
+    obj = db.StringField(choice=mot, required=True)
+    reg = db.StringField()
+    dept = db.StringField()
+    rue = db.StringField()
+    chauff = db.BooleanField()
 
 
 class Reservation(db.Document):
@@ -321,7 +296,7 @@ class Affectation(db.Document):
     id_aff = db.IntField(primary_key=True)
     mat = db.StringField(required=True)
     # Chauffeur
-    id_chauff = db.IntField()
+    id_chauff = db.IntField(required=True)
     chauff_mail = db.StringField(required=True)
     # Trajet
     des_lan = db.FloatField(required=True)
@@ -329,13 +304,52 @@ class Affectation(db.Document):
     reg = db.StringField(required=True)
     dept = db.StringField(required=True)
     rue = db.StringField(required=True)
-    trajet = db.StringField()
-    coût_carb = db.FloatField()
     # Reservation
     dateDeb = db.DateField()
     dateFin = db.DateField()
     obj = db.StringField()
     cl = db.StringField()
+
+
+def find_distance(x, y):
+    lat1, lon1 = x
+    lat2, lon2 = y
+    radius = 6371  # km
+
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) * math.sin(dlat / 2) + math.cos(math.radians(lat1)) \
+        * math.cos(math.radians(lat2)) * math.sin(dlon / 2) * math.sin(dlon / 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    distance_bw_ori_desti = radius * c
+    return distance_bw_ori_desti
+
+
+class Planning(db.Document):
+    idP = db.IntField(primary_key=True)
+    chauffeur = db.IntField()
+    vehicule = db.StringField(required=True)
+    # Chauffeur
+    # Trajet
+    places = db.ListField()
+    cls = db.ListField()
+    dest = db.ListField()
+    trajet = db.StringField()
+    total_dist = db.FloatField()
+    coût_carb = db.FloatField()
+
+    # Reservation
+    dateDeb = db.DateField()
+    dateFin = db.DateField()
+    obj = db.StringField()
+    cl = db.StringField()
+
+    def calculdest(self):
+        self.total_dist = 0.0
+        for i in range(len(self.dest) - 1):
+            self.total_dist = self.total_dist + find_distance(self.dest[i], self.dest[i + 1])
+
+        self.total_dist = self.total_dist + find_distance(pnt_dep, self.dest[0])
 
 
 class Historique(db.Document):
@@ -353,6 +367,93 @@ class Historique(db.Document):
             "Description": self.description,
             "Date opération": self.date
         }
+
+
+class Notification(db.Document):
+    id = db.IntField(primary_key=True)
+    obj = db.StringField()
+    text = db.StringField()
+    id_user = db.StringField()
+    date = db.DateField(default=datetime.now())
+
+
+class Reclamation(db.Document):
+    id = db.IntField(primary_key=True)
+    mail = db.StringField(required=True)
+    obj = db.StringField(required=True)
+    date = db.DateField(default=datetime.now())
+    desp = db.StringField()
+    types = ["Maintenance", "Confidancialité", "Réception", "Relation direct avec le personnel", "autre"]
+    typeR = db.StringField(choice=types, required=True)
+
+
+@app.route("/trajet", methods=["GET"])
+def trajet():
+    id = request.args.get("idp")
+
+    P = Planning.objects.get(idP=id)
+    router = Router("car")
+    c = folium.Map(location=[P.dest[0][0], P.dest[0][1]], zoom_start=5)
+    router = Router("car")
+    if len(P.dest) == 1:
+        print("only one place")
+        folium.Marker(P.dest[0], color="red", popup="Départ").add_to(c)
+    elif len(P.dest) == 2:
+        folium.Marker(P.dest[0], popup="Départ").add_to(c)
+        folium.Marker(P.dest[1], popup="Arrivée").add_to(c)
+        dep = router.findNode(P.dest[0][0], P.dest[0][1])
+        ar = router.findNode(P.dest[1][0], P.dest[1][1])
+        routeLatLons = [P.dest[0], P.dest[1]]
+        status, route = router.doRoute(dep, ar)
+        if status == 'success':
+            print("route trouvé")
+            routeLatLons = list(map(router.nodeLatLon, route))
+        else:
+            print("route pas trouvée!")
+        for indice, coord in enumerate(routeLatLons):
+            if indice % 10 == 0:
+                coord = list(coord)
+                folium.CircleMarker(coord, radius=3, weight=11, opacity=1).add_to(c)
+        folium.PolyLine(routeLatLons, color="blue", weight=15, opacity=1).add_to(c)
+    elif len(P.dest) == 3:
+        folium.Marker(P.dest[0], popup="Départ").add_to(c)
+        folium.Marker(P.dest[1], popup="Arrivée").add_to(c)
+        dep = router.findNode(P.dest[0][0], P.dest[0][1])
+        ar = router.findNode(P.dest[1][0], P.dest[1][1])
+        routeLatLons = [P.dest[0], P.dest[1]]
+        status, route = router.doRoute(dep, ar)
+        if status == 'success':
+            print("route trouvé")
+            routeLatLons = list(map(router.nodeLatLon, route))
+        else:
+            print("route pas trouvée!")
+        for indice, coord in enumerate(routeLatLons):
+            if indice % 10 == 0:
+                coord = list(coord)
+                folium.CircleMarker(coord, radius=3, weight=11, opacity=1).add_to(c)
+        folium.PolyLine(routeLatLons, color="blue", weight=15, opacity=1).add_to(c)
+        #2nd route
+        folium.Marker(P.dest[1], popup="Départ").add_to(c)
+        folium.Marker(P.dest[2], popup="Arrivée").add_to(c)
+        dep2 = router.findNode(P.dest[1][0], P.dest[1][1])
+        ar2 = router.findNode(P.dest[2][0], P.dest[2][1])
+        routeLatLons2 = [P.dest[1], P.dest[2]]
+        status, route2 = router.doRoute(dep2, ar2)
+        if status == 'success':
+            print("route trouvé")
+            routeLatLons2 = list(map(router.nodeLatLon, route2))
+        else:
+            print("route pas trouvée!")
+        for indice, coord in enumerate(routeLatLons2):
+            if indice % 10 == 0:
+                coord = list(coord)
+                folium.CircleMarker(coord, radius=3, weight=11, opacity=1).add_to(c)
+        folium.PolyLine(routeLatLons2, color="blue", weight=15, opacity=1).add_to(c)
+
+    fich = "mapPlan.html"
+    c.save(fich)
+    webbrowser.open(fich)
+    return make_response("Done", 200)
 
 
 # must be done only one time !!!
@@ -891,15 +992,15 @@ def CrudChauffeur():
             return make_response(jsonify(Vs), 200)
 
     elif request.method == "POST":
-        email = request.form.get("Email")
-        nom = request.form.get("Nom")
-        pre = request.form.get("prénom")
-        num = request.form.get("N° Télephone")
-        dn = request.form.get("Date Naissance")
-        de = request.form.get("Date Embauche")
-        adr = request.form.get("Adresse")
+        email = request.form.get("mail")
+        nom = request.form.get("nom")
+        pre = request.form.get("pre")
+        num = request.form.get("ntel")
+        dn = request.form.get("dn")
+        de = request.form.get("de")
+        adr = request.form.get("adr")
         pwd = request.form.get("pwd")
-        typ = request.form.get("Permis")
+        typ = request.form.get("permis")
         sup = request.form.get("NomSup")
         im = request.form.get("image")
         X = Chauffeur.objects(mail=email).first()
@@ -941,15 +1042,15 @@ def OneChauffeur():
         else:
             return make_response(jsonify("Your Data ", V), 200)
     elif request.method == "POST":
-        email = request.form.get("Email")
-        nom = request.form.get("Nom")
-        pre = request.form.get("prénom")
-        num = request.form.get("N° Télephone")
-        dn = request.form.get("Date Naissance")
-        de = request.form.get("Date Embauche")
-        adr = request.form.get("Adresse")
+        email = request.form.get("mail")
+        nom = request.form.get("nom")
+        pre = request.form.get("pre")
+        num = request.form.get("ntel")
+        dn = request.form.get("dn")
+        de = request.form.get("de")
+        adr = request.form.get("adr")
         pwd = request.form.get("pwd")
-        typ = request.form.get("Permis")
+        typ = request.form.get("permis")
         sup = request.form.get("NomSup")
         im = request.form.get("image")
         if V == None:
@@ -971,36 +1072,189 @@ def OneChauffeur():
             return make_response("Suppression du chauffeur avec succées !", 200)
 
 
+@app.route("/client", methods=['POST', 'GET', 'DELETE'])
+def cl_crud():
+    if request.method == "GET":
+        Cl = []
+        for cl in Client.objects():
+            Cl.append(cl)
+        if Cl == []:
+            return make_response("Aucun Client dans le systéme", 201)
+        else:
+            return make_response(jsonify("Clients : ", Cl), 200)
+
+    elif request.method == "POST":
+        email = request.form.get("mail")
+        nom = request.form.get("nom")
+        pre = request.form.get("pre")
+        num = request.form.get("ntel")
+        dn = request.form.get("dn")
+        adr = request.form.get("adr")
+        pwd = request.form.get("pwd")
+        im = request.form.get("image")
+        X = Client.objects(mail=email).first()
+        if X == None:
+            img = open(im, 'rb')
+
+            V = Client(nom=nom, pre=pre, num=num, dn=dn,
+                       mail=email, adr=adr, pwd=pwd)
+
+            U = User(ref=f"{V.nom}{V.pre}", idu="CLIENT", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
+            V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+            max = 0
+            for c in Client.objects:
+                if c.id > max:
+                    max = c.id
+            V.id = max + 1
+            V.save()
+            U.save()
+            return make_response("Ajout d'un client avec succées", 200)
+        else:
+            return make_response("Client existe déjà!", 201)
+    else:
+        Client.objects.delete()
+
+
+@app.route
 # Demande Crud
 @app.route("/demande", methods=['POST', 'GET', 'DELETE'])
 def CrudDemande():
+    id = request.args.get("id_cl")
     if request.method == "GET":
         Ds = []
         for d in Demande.objects():
-            Ds.append(d.to_json())
-        return make_response(jsonify("Tous les demandes  :", Ds), 200)
+            Ds.append(d)
+        if Ds == []:
+            return make_response("Rien a afficher", 201)
+        else:
+            return make_response(jsonify("Tous les demandes  :", Ds), 200)
 
     elif request.method == "POST":
-        content = request.json
-        D = Demande(obj=content["Objet"],
-                    type=content["type"], nbPls=content["nb"], chaff=content["chauffeur"],
-                    capacité=content["cap"], date_res=content["dateR"])
+
+        obj = request.form.get("objet")
+        type = request.form.get("type")
+        ok = request.form.get("chauffeur")
+        nb = request.form.get("nbplc")
+        cap = request.form.get("cap")
+        date = request.form.get("dateR")
+        reg = request.form.get("region")
+        dept = request.form.get("departement")
+        rue = request.form.get("rue")
+
+        D = Demande(obj=obj, type=type, nbPls=int(nb), chauff=bool(ok),
+                    cap=float(cap), date_res=date, reg=reg, dept=dept, rue=rue)
+        max = 0
+        for d in Demande.objects():
+            if d.id_dem > max:
+                max = d.id_dem
+        D.id_dem = max
         D.save()
-        Vs = []
-        X=Vehicule.objects(ty=content["type"], nb=content["nb"], cap=content["cap"], dispo=True)
-        if X == None :
-            return make_response("Votre demande est prise en considération on vous notifie lorsque elle est prête",200)
-        else :
-            for v in X:
-                r = Reservation.objects(mat=v.mat)
-                if r == None:
-                    Vs.append(v.to_json())
-                    return make_response(jsonify("Véhicules recommandés ", Vs), 200)
+
+        cl = Client.objects.get(id=id)
+        U = User.objects.get(mail=cl.mail)
+        N = Notification(id_user=U.ref, obj="Demande",
+                         text=f"Votre demande de réservation est effectué avec succés")
+        max = 0
+        for n in Notification.objects():
+            if n.id > max:
+                max = n.id
+        N.id = max
+        N.save()
+        X = Vehicule.objects(ty=type, nb=nb, cap=cap)
+        if X == None:
+            N = Notification(id_user=U.id, obj="Demande",
+                             text=f"Votre demande est prise en considération on vous notifie lorsque elle est prête")
+            max = 0
+            for n in Notification.objects():
+                if n.id > max:
+                    max = n.id
+            N.id = max
+            N.save()
+            return make_response("Votre demande est prise en considération on vous notifie lorsque elle est prête", 200)
+        else:
+            X = Vehicule.objects(ty=type, nb=nb, cap=cap)
+            rd = []
+            if ok == "False":  # sans chaufffeur
+                for v in X:
+                    if v.dispo == True:
+                        rd.append(v)
+                if rd == []:
+                    N = Notification(id_user=U.ref, obj="Demande",
+                                     text=f"Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
+                    max = 0
+                    for n in Notification.objects():
+                        if n.id > max:
+                            max = n.id
+                    N.id = max
+                    N.save()
+                    return make_response(jsonify("Aucun vehicule disponible", X), 201)
+                else:
+                    return make_response(jsonify("Recommandations : ", rd), 200)
+            else:
+
+                if obj == "Location":
+                    Vs = []
+                    for v in X:
+                        if v.dispo == True:
+                            Vs.append(v.to_json())
+                    if Vs == []:
+                        N = Notification(id_user=U.ref, obj="Demande",
+                                         text=f"Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
+                        max = 0
+                        for n in Notification.objects():
+                            if n.id > max:
+                                max = n.id
+                        N.id = max
+                        N.save()
+                        return make_response("Rien a afficher", 201)
+                    else:
+                        return make_response(jsonify("Location Recommandations", Vs), 200)
+                else:
+                    Vs = []
+                    for v in X:
+                        af = []
+                        for a in Affectation.objects():
+                            if a.mat == v.mat:
+                                af.append(a)
+
+                        C = Cities.objects.get(slug_cite=rue)
+                        dp = Dept.objects.get(code_dept=C.dept)
+                        r = Region.objects.get(code_reg=dp.code_reg)
+
+                        if v.dispo == True:
+                            Vs.append(v.to_json())
+                        else:
+                            if af == None:
+                                return make_response(jsonify("vehicule", X), 201)
+                            else:
+                                for a in af:
+                                    if Affectation.objects(mat=a.mat, dateDeb=date).count() <= 3:
+                                        if a.rue == rue:
+                                            Vs.append(v.to_json)
+                                        elif a.dept == dept:
+                                            Vs.append(v.to_json)
+                                        elif a.reg == reg:
+                                            Vs.append(v.to_json)
+                                        else:
+                                            pass
+                    if Vs == []:
+                        N = Notification(id_user=U.ref, obj="Demande",
+                                         text=f"Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
+                        max = 0
+                        for n in Notification.objects():
+                            if n.id > max:
+                                max = n.id
+                        N.id = max
+                        N.save()
+                        return make_response("Rien a afficher!", 201)
+                    else:
+                        return make_response(jsonify(f"Véhicules recommandés", X), 200)
 
     else:
         Demande.objects.delete()
 
 
+@app.route
 @app.route("/histo", methods=['GET', 'DELETE'])
 def histo():
     if request.method == "GET":
@@ -1016,11 +1270,14 @@ def histo():
         return make_response("Suppression de l'historique", 200)
 
 
-@app.route("/reservation/", methods=['GET', 'POST', 'DELETE'])
+@app.route("/reservation", methods=['GET', 'POST', 'DELETE'])
 def reservation():
     mat = request.args.get("mat")
     if request.method == "GET":
         Rs = []
+        # les réservations urgentes puis les non urgentes!
+        for r in Affectation.objects():
+            Rs.append(r)
         for r in Affectation.objects():
             Rs.append(r)
         if Rs == []:
@@ -1040,15 +1297,11 @@ def reservation():
         obj = request.form.get("obj")
         mail = request.form.get("mail")
         urg = request.form.get("urgent")
-        done = request.form.get("done")
         R = Reservation(RefR=f"{mat}|{dateD}", mat=mat, datedebR=dateD, datefinR=dateF, reg=reg, dept=dept, rue=rue,
-                        chauff=chauff, objet=obj, email_cl=mail, urg=urg)
-
-        V = Vehicule.objects(mat=mat).first()
-        if V == None:
-            return make_response("Car don't existe")
-        else:
-
+                        chauff=bool(chauff), objet=obj, email_cl=mail, urg=urg)
+        R.save()
+        V = Vehicule.objects.get(mat=mat)
+        if chauff == "False":
             V.update(dispo=False)
             H = Historique(mat=mat,
                            op=f"Réservation d'une nouvelle véhicule {mat} pour le {dateD} jusqu'à le {dateF}",
@@ -1059,16 +1312,27 @@ def reservation():
                     max = c.id
             H.id_op = max + 1
             H.save()
-            R.save()
-            ch = Affectation.objects(reg=reg)
-            # chercher si ily une affectation dans la même region
-            if ch == None:
+            U = User.objects.get(mail=mail)
+            N = Notification(id_user=U.ref, obj="Réservation",
+                             text=f"Votre demande de réservation est effectué avec succés veuillez nous rejoindre pour recevez le véhicule souhaité")
+            max = 0
+            for n in Notification.objects():
+                if n.id > max:
+                    max = n.id
+            N.id = max
+            N.save()
+            return ("Réservation approuvée")
+
+        else:
+            F = Affectation.objects(mat=mat, reg=reg).first()
+            if F == None:
+                V.update(dispo=False)
                 chauff = Chauffeur.objects(dispo=True).first()
-                A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id, chauff_mail=chauff.mail,
+                A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, chauff_mail=chauff.mail, id_chauff=chauff.id,
                                 dateDeb=R.datedebR
                                 , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
 
-                C = Cities.objects(slug_cite=R.rue)
+                C = Cities.objects.get(slug_cite=R.rue)
                 D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat, lar=C.lng)
                 A.des_lan = D.lar
                 A.des_lat = D.lat
@@ -1079,181 +1343,201 @@ def reservation():
                 A.id_aff = max + 1
                 A.save()
                 D.save()
+                U = User.objects.get(mail=chauff.mail)
+                N = Notification(id_user=U.ref, obj="Affectation",
+                                 text=f"Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
+                max = 0
+                for n in Notification.objects():
+                    if n.id > max:
+                        max = n.id
+                N.id = max
+                N.save()
                 chauff.update(dispo=False)
-                return make_response("Affectation effectuée pas aucune région commune", 200)
-            else:  # test dans le même dept
-                ds = []
-                for a in ch:
-                    if a.dept == dept:
-                        ds.append(a)
-                if ds == []:  # Aucune affectation dans le même dept
-                    ok = 1
-                    for chauf in ch:  # je cherche les chauffeurs du même region !
-                        i = chauf
-                        if Affectation.objects(id_chauff=chauf.id_chauff).count() < 3:
-                            ok = 0
-                            break
-                    if ok == 0:
-                        A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=i.id_chauff,
-                                        chauff_mail=i.chauff_mail,
-                                        dateDeb=R.datedebR
-                                        , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+                return make_response("Nouvelle Affectation effectuée ", 200)
 
-                        C = Cities.objects.get(slug_cite=rue)
-                        D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat,
-                                        lar=C.lng)
-                        A.des_lan = D.lar
-                        A.des_lat = D.lat
-                        max = 0
-                        for a in Affectation.objects():
-                            if a.id_aff > max:
-                                max = a.id_aff
-                        A.id_aff = max + 1
-                        A.save()
-                        D.save()
-                        return make_response("Affectation effectuée mm region", 200)
-                    else:
-                        chauff = Chauffeur.objects(dispo=True).first()
-                        if chauff == None:
-                            return make_response(
-                                    "Votre Réservation est en cours "
-                                    "de traitement vous allez être notifier dés quelle soit prête ")
-                        else :
-                            A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id,
-                                                chauff_mail=chauff.mail,
-                                                dateDeb=R.datedebR
-                                                , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+            else:
+                if Affectation.objects(id_chauff=F.id_chauff).count() <= 3:
+                    A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=F.id_chauff,
+                                    chauff_mail=F.chauff_mail,
+                                    dateDeb=R.datedebR
+                                    , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
 
-                            C = Cities.objects.get(slug_cite=rue)
-                            D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
-                                                lat=C.lat, lar=C.lng)
-                            A.des_lan = D.lar
-                            A.des_lat = D.lat
-                            max = 0
-                            for a in Affectation.objects():
-                                if a.id_aff > max:
-                                    max = a.id_aff
-                            A.id_aff = max + 1
-                            A.save()
-                            D.save()
-                            chauff.update(dispo=False)
-                else:  # test dans le même rue
-                    rs = []
-                    for l in rs:
-                        if (l.rue == rue):  # je cherche un chauffeur
-                            rs.append(l)
-                    if rs == []:  # il y pas le meme rue
-                        ok = 1
-                        for l in ds:
-                            i = l
-                            if Affectation.objects(id_chauff=l.id_chauff).count() < 3:
-                                ok = 0
-                                break
-                        if ok == 0:
-                            A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=i.id_chauff,
-                                            chauff_mail=i.chauff_mail,
-                                            dateDeb=R.datedebR
-                                            , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
-                            C = Cities.objects.get(slug_cite=rue)
-                            D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
-                                            lat=C.lat, lar=C.lng)
-                            A.des_lan = D.lar
-                            A.des_lat = D.lat
-                            max = 0
-                            for a in Affectation.objects():
-                                if a.id_aff > max:
-                                    max = a.id_aff
-                            A.id_aff = max + 1
-                            A.save()
-                            D.save()
-                            return make_response("Affectation effectuée mm dept", 200)
-                        else:
-                            chauff = Chauffeur.objects(dispo=True).first()
-                            if chauff == None:
-                                return make_response(
-                                    "Votre Réservation est en cours "
-                                    "de traitement vous allez être notifier dés quelle soit prête ")
-                            else:
-                                chauff=Chauffeur.objects(dispo=True)
-                                if chauff == None:
-                                    return make_response("Vous alllez etre notifier des que votre reservation soit prete",200)
-                                else:
-                                    A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id,
-                                                    chauff_mail=chauff.mail,
-                                                    dateDeb=R.datedebR
-                                                    , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
+                    C = Cities.objects.get(slug_cite=rue)
+                    D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat,
+                                    lar=C.lng)
+                    A.des_lan = D.lar
+                    A.des_lat = D.lat
+                    max = 0
+                    for a in Affectation.objects():
+                        if a.id_aff > max:
+                            max = a.id_aff
+                    A.id_aff = max + 1
+                    A.save()
+                    D.save()
+                    U = User.objects.get(mail=F.chauff_mail)
+                    N = Notification(id_user=U.ref, obj="Affectation",
+                                     text=f"Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
+                    max = 0
+                    for n in Notification.objects():
+                        if n.id > max:
+                            max = n.id
+                    N.id = max
+                    N.save()
+                    return make_response("Affectation effectuée mm region", 200)
+                else:
+                    chauff = Chauffeur.objects(dispo=True).first()
+                    A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, chauff_mail=chauff.mail, id_chauff=chauff.id,
+                                    dateDeb=R.datedebR
+                                    , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
 
-                                    C = Cities.objects.get(slug_cite=rue)
-                                    D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
-                                                    lat=C.lat, lar=C.lng)
-                                    A.des_lan = D.lar
-                                    A.des_lat = D.lat
-                                    max = 0
-                                    for a in Affectation.objects():
-                                        if a.id_aff > max:
-                                            max = a.id_aff
-                                    A.id_aff = max + 1
-                                    A.save()
-                                    D.save()
-                                    chauff.update(dispo=False)
-                                    return make_response("Ajout affectation avec nv chauffeur 1",200)
-                    else:
-                        i = 0
-                        ok = 1
-                        for r in rs:
-                            i = r
-                            if Affectation.objects(id_chauff=r.id_chauff).count() < 3:
-                                ok = 0
-                                break
-                        if ok == 0:
-                            A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=i.id_chauff,
-                                            chauff_mail=i.chauff_mail,
-                                            dateDeb=R.datedebR
-                                            , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
-                            C = Cities.objects.get(slug_cite=rue)
-                            D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
-                                            lat=C.lat, lar=C.lng)
-                            A.des_lan = D.lar
-                            A.des_lat = D.lat
-                            max = 0
-                            for a in Affectation.objects():
-                                if a.id_aff > max:
-                                    max = a.id_aff
-                            A.id_aff = max + 1
-                            A.save()
-                            D.save()
-                            return make_response("Affectation effectuée mm rue", 200)
-
-                        else:
-                            chauff = Chauffeur.objects(dispo=True).first()
-                            if chauff == None:
-                                return make_response(
-                                    "Votre Réservation est en cours "
-                                    "de traitement vous allez être notifier dés quelle soit prête ")
-                            else :
-                                A = Affectation(mat=mat, reg=reg, dept=dept, rue=rue, id_chauff=chauff.id,
-                                                chauff_mail=chauff.mail,
-                                                dateDeb=R.datedebR
-                                                , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
-
-                                C = Cities.objects.get(slug_cite=rue)
-                                D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue,
-                                                lat=C.lat, lar=C.lng)
-                                A.des_lan = D.lar
-                                A.des_lat = D.lat
-                                max = 0
-                                for a in Affectation.objects():
-                                    if a.id_aff > max:
-                                        max = a.id_aff
-                                A.id_aff = max + 1
-                                A.save()
-                                D.save()
-                                chauff.update(dispo=False)
-                                return make_response("Affectation effectuée nv chauff 3", 200)
+                    C = Cities.objects.get(slug_cite=R.rue)
+                    D = Destination(ref=f"{reg} {dept} {rue}", reg=reg, dept=dept, rue=rue, lat=C.lat, lar=C.lng)
+                    A.des_lan = D.lar
+                    A.des_lat = D.lat
+                    max = 0
+                    for a in Affectation.objects():
+                        if a.id_aff > max:
+                            max = a.id_aff
+                    A.id_aff = max + 1
+                    A.save()
+                    D.save()
+                    chauff.update(dispo=False)
+                    U = User.objects.get(mail=chauff.mail)
+                    N = Notification(id_user=U.ref, obj="Affectation",
+                                     text=f"Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
+                    max = 0
+                    for n in Notification.objects():
+                        if n.id > max:
+                            max = n.id
+                    N.id = max
+                    N.save()
+                    return make_response("Affectation effectuée pas aucune région commune", 200)
 
     else:
         Reservation.objects.delete()
 
 
+# get all the affectations d'un chauffeur :
+@app.route("/affectation/chauffeur", methods=['GET', 'DELETE'])
+def affec(id=None):
+    id = request.args.get("id_chauff")
+
+    if request.method == "GET":
+        As = []
+        for a in Affectation.objects(id_chauff=id):
+            As.append(a)
+        if As == []:
+            return make_response("Aucune Affectation en ce moment ", 201)
+        else:
+            return make_response(jsonify("Affectations : ", As), 200)
+
+    else:
+        for a in Affectation.objects(id_chauff=id):
+            a.delete()
+        return make_response("Suppression avec succés ", 200)
+
+
+@app.route("/affectation/vehicule", methods=['GET', 'DELETE'])
+def affec_v(mat=None):
+    mat = request.args.get("mat")
+    if request.method == "GET":
+        As = []
+        for a in Affectation.objects(mat=mat):
+            As.append(a)
+        if As == []:
+            return make_response("Aucune Affectation en ce moment ", 201)
+        else:
+            return make_response(jsonify("Affectations : ", As), 200)
+
+    else:
+        for a in Affectation.objects(mat=mat):
+            a.delete()
+        return make_response("Suppression avec succés ", 200)
+
+
+@app.route("/planning", methods=['POST', "GET"])
+def Createplan(id=None, mat=None):
+    id = request.args.get("id_ch")
+    mat = request.args.get("matricule")
+    if request.method == "GET":
+        Pl = []
+        for p in Planning.objects():
+            Pl.append(p)
+        return make_response(jsonify("Plannings : ", Pl), 200)
+    else:
+        coord = []
+        lats = []
+        lngs = []
+        destinations = []
+        Cls = []
+
+        for a in Affectation.objects(id_chauff=id, mat=mat).order_by("des_lat"):
+            lats.append(a.des_lat)
+            lngs.append(a.des_lan)
+            destinations.append(f"{a.rue} , {a.dept} , {a.reg}")
+            Cls.append(a.cl)
+        coord = zip(lats, lngs)
+        P = Planning(chauffeur=id, vehicule=mat, dest=coord, cls=Cls, places=destinations)
+        max = 0
+        for i in Planning.objects():
+            if i.idP > max:
+                max = i.idP
+        P.idP = max + 1
+        P.calculdest()
+        P.save()
+        return make_response("Doneeee", 200)
+
+
+"""
+@app.route("/affectation/chauffeur/", methods=['GET', 'POST'])
+def aff_ch():
+    id_ch = request.args.get("id_ch")
+    if request.method == "GET":
+        As = []
+        Ds = []
+        for a in Affectation.objects():
+            if a.chauff_id == id_ch:
+                As.append(a)
+        if As == []:
+            return make_response("Aucune affectation", 201)
+        else:
+            return make_response(jsonify("Affectations :", As), 200)
+
+
+@app.route("/reservation/", methods=["GET", "DELETE"])
+def one_res():
+    ref = request.args.get("ref")
+    if request.method == "GET":
+        R = Reservation.objects(RefR=ref).first()
+
+
+@app.route("/reclamation", methods=["GET", "POST", "DELETE"])
+def recl():
+    if request.method == "GET":
+        Rs = []
+        for r in Reclamation.objects():
+            Rs.append(r)
+        if Rs==[]:
+            return make_response("Aucune réclamation à afficher", 201)
+        else:
+            return make_response(jsonify("réclamations :", Rs), 200)
+
+    elif request.method == "POST":
+        mail=request.form.get("mail")
+        obj=request.form.get("obj")
+        dsc=request.form.get("Description")
+        typ=request.form.get("type")
+        R=Reclamation(mail=mail,obj=obj,desp=dsc,typeR=typ)
+        max = 0
+        for r in Reclamation.objects():
+            if r.id> max :
+                max = r.id
+        R.id = max+1
+        R.save()
+        U=User.objects.get(mail=mail)
+        N=Notification(id_user = U.id, obj="Réclamation" , text=f"Votre Réclamation de {typ} d'objet : {obj} est bien reçu ")
+        N.save()
+    else:
+"""
 if __name__ == '__main__':
     app.run()
