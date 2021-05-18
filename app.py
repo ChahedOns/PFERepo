@@ -1,6 +1,7 @@
 import webbrowser
 from datetime import datetime, timedelta
 from urllib import request
+from flask_cors import CORS, cross_origin
 from PIL import Image
 import bson
 import folium
@@ -33,6 +34,8 @@ db = MongoEngine()
 db.init_app(app)
 
 pnt_dep = (48.866667, 2.333333)
+cors = CORS(app, resources={r"/*": {"origins": "*"}})
+app.config['CORS_HEADERS'] = 'Content-Type'
 
 
 class Reparation(db.Document):
@@ -43,7 +46,7 @@ class Reparation(db.Document):
 
     def to_json(self):
         return {
-            "Référence": self.ref,
+            "Reference": self.ref,
             "CodeEnt": self.En,
             "Matricule": self.vh,
             "Date": self.date
@@ -82,19 +85,19 @@ class Vehicule(db.Document):
     def to_json(self):
         return {
 
-            "Matricule ": self.mat,
-            "Type de véhicules ": self.ty,
-            "Année de Fabrication": self.an,
-            "Marque ": self.mr,
+            "Matricule": self.mat,
+            "Typev": self.ty,
+            "AnFab": self.an,
+            "Marque": self.mr,
             "Power": self.powr,
-            "Type Carburant ": self.tyC,
-            "Consomation Carburant (L)": self.conso,
-            "Kilométrage": self.kilo,
-            "Nombre des Places ": self.nb,
-            "Capacité (kg) ": self.cap,
-            "Disponibilité": self.dispo,
-            "Type de permis ": self.tyP,
-            "Mot Clé : ": self.motClé
+            "TypeC": self.tyC,
+            "ConsoC": self.conso,
+            "Kilo": self.kilo,
+            "NbrPlace": self.nb,
+            "Cap": self.cap,
+            "Dispo": self.dispo,
+            "permis": self.tyP,
+            "Mot": self.motClé
 
         }
 
@@ -119,15 +122,15 @@ class Chauffeur(db.Document):
         return {
 
             "id": self.id,
-            "Nom ": self.nom,
-            "prénom": self.pre,
-            "N° Télephone ": self.num,
-            "Date Naissance ": self.dn,
-            "Date Embauche": self.de,
-            "Adresse ": self.adr,
+            "Nom": self.nom,
+            "prenom": self.pre,
+            "NumTel": self.num,
+            "DateNaissance": self.dn,
+            "DateEmbauche": self.de,
+            "Adresse": self.adr,
             "Email": self.mail,
-            "Mot de passe ": self.pwd,
-            "Disponibilité": self.dispo
+            "Mot de passe": self.pwd,
+            "Disponibilite": self.dispo
 
         }
 
@@ -150,13 +153,14 @@ class Superviseur(db.Document):
         return {
             "id": self.id,
             "Nom": self.nom,
-            "prénom": self.pre,
-            "N° Télephone": self.num,
-            "Date Naissance": self.dn,
-            "Date Embauche": self.de,
+            "prenom": self.pre,
+            "NumTel": self.num,
+            "DateNaissance": self.dn,
+            "DateEmbauche": self.de,
             "Adresse": self.adr,
             "Email": self.mail,
             "Mot de passe": self.pwd,
+
 
         }
 
@@ -201,7 +205,7 @@ class Destination(db.Document):
 
     def to_json(self):
         return {
-            "Lati"
+
             "Gouvernement": self.gouv,
             "Région": self.reg,
             "Rue": self.rue,
@@ -348,11 +352,11 @@ class Historique(db.Document):
 
     def to_json(self):
         return {
-            "id opération ": self.id_op,
+            "idoperation": self.id_op,
             "Matricule": self.mat,
-            "Opération": self.op,
+            "Operation": self.op,
             "Description": self.description,
-            "Date opération": self.date
+            "Dateoperation": self.date
         }
 
 
@@ -641,7 +645,7 @@ def rep_one():
 def Ent():
     if request.method == 'GET':
         Es = []
-        for e in Entretien.objects():
+        for e in Entretien.objects().all():
             Es.append(e.to_json())
         return make_response(jsonify("Les entretiens disponibles : ", Es), 200)
     elif request.method == 'POST':
@@ -655,7 +659,7 @@ def Ent():
         else:
             return make_response("Entretien Existe Deja", 201)
     else:
-        for e in Entretien.objects():
+        for e in Entretien.objects.all():
             rep_ent(e.codeEnt)
             e.delete()
         return make_response("Suppression de tous les Entretiens avec succées!", 200)
@@ -699,17 +703,17 @@ def CrudVehicule():
     elif request.method == "POST":
 
         MAT = request.form.get("Matricule")
-        TYPE = request.form.get("Type de véhicules")
-        ANNEE = request.form.get("Année de Fabrication")
+        TYPE = request.form.get("Typev")
+        ANNEE = request.form.get("AnFab")
         MARQ = request.form.get("Marque")
-        CONSO = request.form.get("Consomation Carburant (L)")
-        TYPC = request.form.get("Type Carburant")
-        POW = request.form.get("Power")
-        NBr = request.form.get("Nombre des Places")
-        CAP = request.form.get("Capacité")
-        DISPO = request.form.get("Disponibilité")
-        KILO = request.form.get("Kilométrage")
-        TYP = request.form.get("TypePermis")
+        CONSO = request.form.get("ConsoC")
+        TYPC = request.form.get("TypeC")
+        POW = request.form.get("Puiss")
+        NBr = request.form.get("NbrPlace")
+        CAP = request.form.get("Cap")
+        DISPO = request.form.get("Dispo")
+        KILO = request.form.get("Kilo")
+        TYP = request.form.get("TypeP")
         MOT = request.form.get("Mot")
         X = Vehicule.objects(mat=MAT).first()
         if X == None:
@@ -746,17 +750,17 @@ def OneVehicule():
             return make_response(jsonify("Véhicule : ", V), 200)
 
     elif request.method == "POST":
-        TYPE = request.form.get("Type de véhicules")
-        ANNEE = request.form.get("Année de Fabrication")
+        TYPE = request.form.get("TypeV")
+        ANNEE = request.form.get("AnFab")
         MARQ = request.form.get("Marque")
-        CONSO = request.form.get("Consomation Carburant (L)")
-        TYPC = request.form.get("Type Carburant")
-        POW = request.form.get("Power")
-        NBr = request.form.get("Nombre des Places")
-        CAP = request.form.get("Capacité")
-        DISPO = request.form.get("Disponibilité")
-        KILO = request.form.get("Kilométrage")
-        TYP = request.form.get("TypePermis")
+        CONSO = request.form.get("ConsoC")
+        TYPC = request.form.get("TypeC")
+        POW = request.form.get("Puiss")
+        NBr = request.form.get("NbrPlace")
+        CAP = request.form.get("Cap")
+        DISPO = request.form.get("Dispo")
+        KILO = request.form.get("Kilo")
+        TYP = request.form.get("TypeP")
         MOT = request.form.get("Mot")
 
         if V == None:
@@ -803,15 +807,14 @@ def CrudSuperviseur():
         return make_response(jsonify("Les superviseurs sont : ", Vs), 200)
 
     elif request.method == "POST":
-        email = request.form.get("Email")
-        nom = request.form.get("Nom")
-        pre = request.form.get("prénom")
-        num = request.form.get("N° Télephone")
-        dn = request.form.get("Date Naissance")
-        de = request.form.get("Date Embauche")
-        adr = request.form.get("Adresse")
+        email = request.form.get("mail")
+        nom = request.form.get("nom")
+        pre = request.form.get("pre")
+        num = request.form.get("ntel")
+        dn = request.form.get("dn")
+        de = request.form.get("de")
+        adr = request.form.get("adr")
         pwd = request.form.get("pwd")
-
         im = request.form.get("image")
 
         x = Superviseur.objects(mail=email).first()
@@ -853,20 +856,21 @@ def OneSuperviseur():
             return make_response(jsonify("Superviseur : ", V), 200)
 
     elif request.method == "POST":
-        email = request.form.get("Email")
-        nom = request.form.get("Nom")
-        pre = request.form.get("prénom")
-        num = request.form.get("N° Télephone")
-        dn = request.form.get("Date Naissance")
-        de = request.form.get("Date Embauche")
-        adr = request.form.get("Adresse")
+        email = request.form.get("mail")
+        nom = request.form.get("nom")
+        pre = request.form.get("pre")
+        num = request.form.get("ntel")
+        dn = request.form.get("dn")
+        de = request.form.get("de")
+        adr = request.form.get("adr")
         pwd = request.form.get("pwd")
-        typ = request.form.get("Permis")
-        sup = request.form.get("NomSup")
         im = request.form.get("image")
         if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
+            if im != "" :
+                img = open(im, 'rb')
+                V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
             V.update(nom=nom, pre=pre, num=num, dn=dn, de=de,
                      mail=email, adr=adr, pwd=pwd)
             U = User.objects(mail=V.mail).first()
@@ -917,13 +921,13 @@ def CrudChauffeur():
         email = request.form.get("mail")
         nom = request.form.get("nom")
         pre = request.form.get("pre")
-        num = request.form.get("ntel")
+        num = request.form.get("num")
         dn = request.form.get("dn")
         de = request.form.get("de")
         adr = request.form.get("adr")
         pwd = request.form.get("pwd")
-        typ = request.form.get("permis")
-        sup = request.form.get("NomSup")
+        typ = request.form.get("typ")
+        sup = request.form.get("nomsup")
         im = request.form.get("image")
         X = Chauffeur.objects(mail=email).first()
         if X == None:
@@ -967,7 +971,7 @@ def OneChauffeur():
         email = request.form.get("mail")
         nom = request.form.get("nom")
         pre = request.form.get("pre")
-        num = request.form.get("ntel")
+        num = request.form.get("num")
         dn = request.form.get("dn")
         de = request.form.get("de")
         adr = request.form.get("adr")
@@ -978,6 +982,10 @@ def OneChauffeur():
         if V == None:
             return make_response("Chauffeur inexistant ! ", 201)
         else:
+            if im != "" :
+                img = open(im, 'rb')
+                V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+
             U = User.objects(mail=V.mail).first()
             V.update(nom=nom, pre=pre, num=num, dn=dn, de=de,
                      mail=email, adr=adr, pwd=pwd, typ=typ, nomsup=sup)
@@ -1229,7 +1237,7 @@ def histo():
 
 
 
-#-----------Reservation et affectation
+#-----------Reservation et affectation ------------
 @app.route("/reservation", methods=['GET', 'POST', 'DELETE'])
 def reservation():
     dem = request.args.get("idDemande")
@@ -1403,40 +1411,32 @@ def affec_v(mat=None):
 
 #---------Planning --------
 def Createplan(id=None, mat=None):
-    id = request.args.get("id_ch")
-    mat = request.args.get("matricule")
-    if request.method == "GET":
-        Pl = []
-        for p in Planning.objects():
-            Pl.append(p)
-        return make_response(jsonify("Plannings : ", Pl), 200)
-    else:
-        coord = []
-        lats = []
-        lngs = []
-        destinations = []
-        Cls = []
-        data = []
-        for a in Affectation.objects(id_chauff=id, mat=mat).order_by("des_lat"):
-            lats.append(a.des_lat)
-            lngs.append(a.des_lan)
-            destinations.append(f"{a.rue} , {a.dept} , {a.reg}")
-            Cls.append(a.cl)
-            coord = zip(lats, lngs)
-            data = zip(Cls, destinations, coord)
-        P = Planning(chauffeur=id, vehicule=mat, dest=coord, cls=Cls, places=destinations, data=data)
-        max = 0
-        for i in Planning.objects():
-            if i.idP > max:
-                max = i.idP
-        P.idP = max + 1
-        P.calculdest()
-        P.save()
-        return make_response("Planning créer avec succés ", 200)
+    coord = []
+    lats = []
+    lngs = []
+    destinations = []
+    Cls = []
+    data = []
+    for a in Affectation.objects(id_chauff=id, mat=mat).order_by("des_lat"):
+        lats.append(a.des_lat)
+        lngs.append(a.des_lan)
+        destinations.append(f"{a.rue} , {a.dept} , {a.reg}")
+        Cls.append(a.cl)
+        coord = zip(lats, lngs)
+        data = zip(Cls, destinations, coord)
+    P = Planning(chauffeur=id, vehicule=mat, dest=coord, cls=Cls, places=destinations, data=data)
+    max = 0
+    for i in Planning.objects():
+        if i.idP > max:
+            max = i.idP
+    P.idP = max + 1
+    P.calculdest()
+    P.save()
+    return make_response("Planning créer avec succés ", 200)
 
 
 # Le planning de chaque chauffeur : Dashboard
-@app.route("/planning", methods=['POST', "GET"])
+@app.route("/planning", methods=["DELETE", "GET" , "POST"])
 def planning(id=None):
     id = request.args.get("chauffeur")
     if request.method == "GET":
@@ -1444,15 +1444,29 @@ def planning(id=None):
         for p in Planning.objects(chauffeur=id):
             ps.append(p)
         if ps == []:
-            mats = []
-            for A in Affectation.objects(id_chauff=id):
-                if A.mat in mats:
-                    pass
-                else:
-                    mats.append(A.mat)
-            for mat in mats:
+            return make_response("Aucun plan pour le moment" , 201)
+        else :
+            return make_response(jsonify("Les plannings : " , ps) , 200)
+
+    elif request.method =="POST":
+        mats = []
+        for A in Affectation.objects(id_chauff=id):
+            if A.mat in mats:
+                pass
+            else:
+                mats.append(A.mat)
+
+        for mat in mats:
+            P = Planning.objects(id_chauff = id)
+            if P != None :
+                return make_response("Planning existe dejà " , 201)
+            else :
                 Createplan(id, mat)
-            planning(id)
+                return make_response("ajout avec succées", 200)
+    else :
+        Planning.objects(chauffeur=id).delete()
+        return make_response("Suppresion avec succées" , 200)
+
 
 
 
