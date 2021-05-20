@@ -44,7 +44,7 @@ class Reparation(db.Document):
     ref = db.StringField()
     vh = db.StringField(required=True)
     En = db.StringField(required=True)
-    date = db.DateTimeField(required=True, default=datetime.now)
+    date = db.DateTimeField(required=True, default=datetime.utcnow)
 
     def to_json(self):
         return {
@@ -131,9 +131,8 @@ class Chauffeur(db.Document):
             "DateEmbauche": self.de,
             "Adresse": self.adr,
             "Email": self.mail,
-            "Mot de passe": self.pwd,
-            "Disponibilite": self.dispo
-
+            "Disponibilite": self.dispo,
+            "TypesPermis": self.typ
 
         }
 
@@ -161,8 +160,7 @@ class Superviseur(db.Document):
             "DateNaissance": self.dn,
             "DateEmbauche": self.de,
             "Adresse": self.adr,
-            "Email": self.mail,
-            "Mot de passe": self.pwd,
+            "Email": self.mail
 
         }
 
@@ -178,6 +176,18 @@ class Client(db.Document):
     adr = db.StringField(required=True)
     imgProfil = db.ImageField(thumbnail_size=(150, 150, False))
 
+    def to_json(self):
+        return {
+            "id": self.id,
+            "Nom": self.nom,
+            "prenom": self.pre,
+            "NumTel": self.num,
+            "DateNaissance": self.dn,
+            "Adresse": self.adr,
+            "Email": self.mail
+
+        }
+
 
 class User(db.Document):
     nom = db.StringField()
@@ -190,11 +200,11 @@ class User(db.Document):
 
     def to_json(self):
         return {
+            "ref": self.ref,
             "ID": self.id,
             "Nom ": self.nom,
             "prénom": self.pre,
             "Email": self.mail,
-            "Mot de passe ": self.pwd,
         }
 
 
@@ -226,6 +236,14 @@ class Region(db.Document):
     nom_reg = db.StringField()
     slug_reg = db.StringField()
 
+    def to_json(self):
+        return {
+            "CodeReg": self.code_reg,
+            "nomReg": self.nom_reg,
+            "slugReg": self.slug_reg
+
+        }
+
 
 class Dept(db.Document):
     id_dept = db.IntField(primary_key=True)
@@ -236,6 +254,18 @@ class Dept(db.Document):
     nom_dept = db.StringField()
     slug_dept = db.StringField()
 
+    def to_json(self):
+        return {
+
+            "CodeReg": self.code_reg,
+            "nomReg": self.nom_reg,
+            "slugRreg": self.slug_reg,
+            "CodeDept": self.code_dept,
+            "nomDept": self.nom_dept,
+            "slugDept": self.slug_dept
+
+        }
+
 
 class Cities(db.Document):
     id_cite = db.IntField(primary_key=True)
@@ -245,10 +275,20 @@ class Cities(db.Document):
     lat = db.FloatField(required=True)
     lng = db.FloatField(required=True)
 
+    def to_json(self):
+        return {
+            "nomCite": self.nom_cite,
+            "slugCite": self.slug_cite,
+            "Departement": self.dept,
+            "nomDept": self.nom_dept,
+            "latitude": self.lat,
+            "longtitude": self.lng
+        }
+
 
 class Demande(db.Document):
     id_dem = db.IntField(primary_key=True)
-    date_dem = db.DateField(default=datetime.now)
+    date_dem = db.DateField(default=datetime.utcnow)
     # vehicule
     mail = db.StringField()
     type = db.StringField(required=True)
@@ -262,6 +302,23 @@ class Demande(db.Document):
     dept = db.StringField()
     rue = db.StringField()
     chauff = db.BooleanField()
+
+    def to_json(self):
+        return {
+            "ID": self.id_dem,
+            "dateDem": self.date_dem,
+            "clMail": self.mail,
+            "TypeVh": self.type,
+            "nbrplaces": self.nbPls,
+            "capacite": self.cap,
+            "dateRes": self.date_res,
+            "dateFin": self.date_fin,
+            "objet": self.obj,
+            "region": self.reg,
+            "departement": self.dept,
+            "rue": self.rue,
+            "chauffeur": self.chauff
+        }
 
 
 class Reservation(db.Document):
@@ -284,6 +341,21 @@ class Reservation(db.Document):
     done = db.BooleanField(default=False)
     id_chauff = db.IntField()
 
+    def to_json(self):
+        return {
+            "reference": self.RefR,
+            "matricule": self.mat,
+            "clMail": self.email_cl,
+            "dateRes": self.datedebR,
+            "dateFin": self.datefinR,
+            "objet": self.objet,
+            "region": self.reg,
+            "departement": self.dept,
+            "rue": self.rue,
+            "urgence": self.urg,
+            "chauffeur": self.chauff
+        }
+
 
 class Affectation(db.Document):
     id_aff = db.IntField(primary_key=True)
@@ -302,6 +374,25 @@ class Affectation(db.Document):
     dateFin = db.DateField()
     obj = db.StringField()
     cl = db.StringField()
+
+    def to_json(self):
+        return {
+            "IDaff": self.id_aff,
+            "matricule": self.mat,
+            "IDChauff": self.id_chauff,
+            "mailChauff": self.chauff_mail,
+
+            "client": self.cl,
+            "dateRes": self.dateDeb,
+            "dateFin": self.dateFin,
+            "objet": self.obj,
+
+            "region": self.reg,
+            "departement": self.dept,
+            "rue": self.rue,
+            "latitude": self.des_lat,
+            "longtitude": self.des_lan
+        }
 
 
 def find_distance(x, y):
@@ -331,12 +422,26 @@ class Planning(db.Document):
     trajet = db.StringField()
     total_dist = db.FloatField()
     coût_carb = db.FloatField()
-
     # Reservation
     dateDeb = db.DateField()
     dateFin = db.DateField()
     obj = db.StringField()
     cl = db.StringField()
+    etat = db.BooleanField(default=False)
+
+    def to_json(self):
+        return {
+            "ID": self.idP,
+            "matricule": self.vehicule,
+            "IDChauff": self.chauffeur,
+            "Details": {
+                "Clients": self.cls,
+                "Places": self.places,
+                "Destinations": self.dest
+            },
+            "DistanceTotal": self.total_dist,
+            "TraitementBilan": self.etat
+        }
 
     def calculdest(self):
         self.total_dist = 0.0
@@ -351,7 +456,7 @@ class Historique(db.Document):
     mat = db.StringField(required=True)
     op = db.StringField()
     description = db.StringField()
-    date = db.DateField(default=datetime.now())
+    date = db.DateField(default=datetime.utcnow())
 
     def to_json(self):
         return {
@@ -370,6 +475,15 @@ class Notification(db.Document):
     id_user = db.StringField()
     date = db.DateField(default=datetime.now())
 
+    def to_json(self):
+        return {
+            "idNotification": self.id,
+            "object": self.obj,
+            "text": self.text,
+            "user": self.id_user,
+            "Date": self.date
+        }
+
 
 class Reclamation(db.Document):
     id = db.IntField(primary_key=True)
@@ -379,6 +493,31 @@ class Reclamation(db.Document):
     desp = db.StringField()
     types = ["Maintenance", "Confidancialité", "Réception", "Relation direct avec le personnel", "autre"]
     typeR = db.StringField(choice=types, required=True)
+
+    def to_json(self):
+        return {
+            "idNotification": self.id,
+            "object": self.obj,
+            "description": self.desp,
+            "user": self.mail,
+            "type": self.typeR,
+            "Date": self.date
+        }
+
+
+class Bilan(db.Document):
+    idB = db.IntField(primary_key=True)
+    mat = db.StringField(required=True)
+    reparation = db.ListField()
+    etat = db.BooleanField(default=False)
+
+    def to_json(self):
+        return {
+            "ID": self.idB,
+            "Matricule": self.mat,
+            "Reparation": self.reparation,
+            "etat": self.reparation
+        }
 
 
 # ----------must be done only one time---------------
@@ -490,7 +629,7 @@ def repar():
                 else:
                     et = False
                 V.update(etat=et, dispo=et)
-                H = Historique(mat=mat, op=f"Nouvelle réparation {E.libelle}", date=datetime.now())
+                H = Historique(mat=mat, op=f"Nouvelle réparation {E.Libelle}", date=datetime.now())
                 max = 0
                 for c in Historique.objects:
                     if c.id > max:
@@ -721,7 +860,8 @@ def CrudVehicule():
             V = Vehicule(mat=MAT, ty=TYPE, an=ANNEE, mr=MARQ,
                          conso=CONSO, tyC=TYPC,
                          powr=POW, cap=CAP, dispo=DISPO, kilo=KILO,
-                         nb=NBr, tyP=TYP, motClé=MOT)
+                         nb=NBr, tyP=TYP)
+            V.motClé = MOT.split(",")
             V.save()
             H = Historique(mat=V.mat, op=f"Creation d'une nouvelle véhicule {V.mat}", date=datetime.now())
             max = 0
@@ -820,9 +960,10 @@ def CrudSuperviseur():
 
         x = Superviseur.objects(mail=email).first()
         if x == None:
-            V = Superviseur(nom=nom, pre=pre, num=num, dn=dn, de=de,
+            V = Superviseur(nom=nom, pre=pre, num=num,
                             mail=email, adr=adr, pwd=pwd)
-
+            V.dn = datetime.strptime(dn, "%Y-%m-%d")
+            V.de = datetime.strptime(de, "%Y-%m-%d")
             U = User(ref=f"{V.nom}{V.pre}", idu="SUPP", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
             if im != None:
                 img = open(im, 'rb')
@@ -858,7 +999,7 @@ def OneSuperviseur():
         if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
-            return make_response(jsonify(V), 200)
+            return make_response(jsonify(V.to_json()), 200)
 
     elif request.method == "POST":
         email = request.form.get("mail")
@@ -899,7 +1040,7 @@ def user():
     if request.method == "GET":
         us = []
         for u in User.objects():
-            us.append(u)
+            us.append(u.to_json())
 
         if not us == []:
             return make_response(jsonify(us), 200)
@@ -915,7 +1056,7 @@ def CrudChauffeur():
     if request.method == "GET":
         Vs = []
         for v in Chauffeur.objects():
-            Vs.append(v)
+            Vs.append(v.to_json())
         if Vs == []:
             return make_response("Aucun chauffeur dans le systéme", 201)
         else:
@@ -936,8 +1077,9 @@ def CrudChauffeur():
         X = Chauffeur.objects(mail=email).first()
         if X == None:
             V = Chauffeur(nom=nom, pre=pre, num=num, dn=dn, de=de,
-                          mail=email, adr=adr, pwd=pwd, typ=typ, nomsup=sup)
+                          mail=email, adr=adr, pwd=pwd, nomsup=sup)
             U = User(ref=f"{V.nom}{V.pre}", idu="CHAUFF", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
+            V.typ = typ.split(",")
             if im != None:
                 img = open(im, 'rb')
                 V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
@@ -971,7 +1113,7 @@ def OneChauffeur():
         if V == None:
             return make_response("Chauffeur inexistant ! ", 201)
         else:
-            return make_response(jsonify(V), 200)
+            return make_response(jsonify(V.to_json()), 200)
     elif request.method == "POST":
         email = request.form.get("mail")
         nom = request.form.get("nom")
@@ -1013,11 +1155,11 @@ def cl_crud():
     if request.method == "GET":
         Cl = []
         for cl in Client.objects():
-            Cl.append(cl)
+            Cl.append(cl.to_json())
         if Cl == []:
             return make_response("Aucun Client dans le systéme", 201)
         else:
-            return make_response(jsonify(Cl), 200)
+            return make_response(jsonify(Cl.to_json()), 200)
 
     elif request.method == "POST":
         email = request.form.get("mail")
@@ -1056,37 +1198,38 @@ def cl_crud():
 # -----------------get image --------------------
 @app.route('/get-image/chauffeur/', methods=["GET"])
 def getimageCh():
-    id=request.args.get("chauff")
+    id = request.args.get("chauff")
     user = Chauffeur.objects(id=id).first()
-    if  user ==None :
-        return make_response("Aucun Chauffeur" , 201)
-    else :
+    if user == None:
+        return make_response("Aucun Chauffeur", 201)
+    else:
         return send_file(io.BytesIO(user.imgProfil.read()),
-                  attachment_filename='image.jpg',
-                  mimetype='image/jpg')
+                         attachment_filename='image.jpg',
+                         mimetype='image/jpg')
+
 
 @app.route('/get-image/superviseur/', methods=["GET"])
 def getimageSup():
-    id=request.args.get("sup")
+    id = request.args.get("sup")
     user = Superviseur.objects(id=id).first()
-    if  user ==None :
-        return make_response("Aucun superviseur" , 201)
-    else :
+    if user == None:
+        return make_response("Aucun superviseur", 201)
+    else:
         return send_file(io.BytesIO(user.imgProfil.read()),
-                  attachment_filename='image.jpg',
-                  mimetype='image/jpg')
+                         attachment_filename='image.jpg',
+                         mimetype='image/jpg')
 
 
 @app.route('/get-image/Client/', methods=["GET"])
 def getimageCl():
-    id=request.args.get("cl")
+    id = request.args.get("cl")
     user = Client.objects(id=id).first()
-    if  user ==None :
-        return make_response("Aucun Client" , 201)
-    else :
+    if user == None:
+        return make_response("Aucun Client", 201)
+    else:
         return send_file(io.BytesIO(user.imgProfil.read()),
-                  attachment_filename='image.jpg',
-                  mimetype='image/jpg')
+                         attachment_filename='image.jpg',
+                         mimetype='image/jpg')
 
 
 # ------------Demande Crud---------
@@ -1096,7 +1239,7 @@ def CrudDemande():
     if request.method == "GET":
         Ds = []
         for d in Demande.objects():
-            Ds.append(d)
+            Ds.append(d.to_json())
         if Ds == []:
             return make_response("Rien a afficher", 201)
         else:
@@ -1251,7 +1394,7 @@ def one_dem():
         if R == None:
             return make_response("Aucune réservation avec cette réference ", 201)
         else:
-            make_response(jsonify(R), 200)
+            make_response(jsonify(R.to_json()), 200)
     else:
         R = Demande.objects(id=ref).first()
         if R == None:
@@ -1269,7 +1412,7 @@ def histo():
     if request.method == "GET":
         Vs = []
         for h in Historique.objects(mat=mat):
-            Vs.append(h)
+            Vs.append(h.to_json())
         if Vs == []:
             return make_response("Rien à afficher", 201)
         else:
@@ -1290,10 +1433,10 @@ def reservation():
     if request.method == "GET":
         Rs = []
         # les réservations urgentes puis les non urgentes!
-        for r in Affectation.objects():
-            Rs.append(r)
-        for r in Affectation.objects():
-            Rs.append(r)
+        for r in Affectation.objects(urg=True):
+            Rs.append(r.to_json())
+        for r in Affectation.objects(urg=False):
+            Rs.append(r.to_json())
         if Rs == []:
             return make_response("Rien a afficher", 201)
         else:
@@ -1411,7 +1554,7 @@ def one_res():
         if R == None:
             return make_response("Aucune réservation avec cette réference ", 201)
         else:
-            make_response(jsonify("Reservation :", R), 200)
+            make_response(jsonify(R.to_json()), 200)
 
 
 # get les  affectations d'un chauffeur :
@@ -1422,11 +1565,11 @@ def affec(id=None):
     if request.method == "GET":
         As = []
         for a in Affectation.objects(id_chauff=id):
-            As.append(a)
+            As.append(a.to_json())
         if As == []:
             return make_response("Aucune Affectation en ce moment ", 201)
         else:
-            return make_response(jsonify("Affectations : ", As), 200)
+            return make_response(jsonify(As), 200)
 
     else:
         for a in Affectation.objects(id_chauff=id):
@@ -1442,11 +1585,11 @@ def affec_v(mat=None):
     if request.method == "GET":
         As = []
         for a in Affectation.objects(mat=mat):
-            As.append(a)
+            As.append(a.to_json())
         if As == []:
             return make_response("Aucune Affectation en ce moment ", 201)
         else:
-            return make_response(jsonify("Affectations : ", As), 200)
+            return make_response(jsonify(As), 200)
 
     else:
         for a in Affectation.objects(mat=mat):
@@ -1468,8 +1611,8 @@ def Createplan(id=None, mat=None):
         destinations.append(f"{a.rue} , {a.dept} , {a.reg}")
         Cls.append(a.cl)
         coord = zip(lats, lngs)
-        data = zip(Cls, destinations, coord)
-    P = Planning(chauffeur=id, vehicule=mat, dest=coord, cls=Cls, places=destinations, data=data)
+
+    P = Planning(chauffeur=id, vehicule=mat, dest=coord, cls=Cls, places=destinations)
     max = 0
     for i in Planning.objects():
         if i.idP > max:
@@ -1487,7 +1630,7 @@ def planning(id=None):
     if request.method == "GET":
         ps = []
         for p in Planning.objects(chauffeur=id):
-            ps.append(p)
+            ps.append(p.to_json())
         if ps == []:
             return make_response("Aucun plan pour le moment", 201)
         else:
@@ -1502,12 +1645,13 @@ def planning(id=None):
                 mats.append(A.mat)
 
         for mat in mats:
-            P = Planning.objects(id_chauff=id)
-            if P != None:
-                return make_response("Planning existe dejà ", 201)
-            else:
+            P = Planning.objects(vehicule=mat, chauffeur=id).first()
+            if P == None:
                 Createplan(id, mat)
-                return make_response("ajout avec succées", 200)
+            else:
+                pass
+        return make_response("Creation avec succées", 200)
+
     else:
         Planning.objects(chauffeur=id).delete()
         return make_response("Suppresion avec succées", 200)
@@ -1519,7 +1663,7 @@ def get_cite():
     cs = []
     for c in Cities.objects():
         cs.append(c.nom_cite)
-        return make_response(jsonify("Cites", cs), 200)
+        return make_response(jsonify(cs), 200)
 
 
 @app.route("/dept", methods=["GET"])
@@ -1527,7 +1671,7 @@ def get_dept():
     cs = []
     for c in Dept.objects():
         cs.append(c.nom_dept)
-        return make_response(jsonify("Departements:", cs), 200)
+        return make_response(jsonify(cs), 200)
 
 
 @app.route("/region", methods=["GET"])
@@ -1535,7 +1679,7 @@ def get_reg():
     cs = []
     for c in Region.objects():
         cs.append(c.nom_reg)
-        return make_response(jsonify("Regions", cs), 200)
+        return make_response(jsonify(cs), 200)
 
 
 # ----------Geolocation things -------------
@@ -1608,6 +1752,39 @@ def trajet():
     return make_response("Done", 200)
 
 
+# ------------Bilan------------
+@app.route("/bilan/", methods=["GET", "POST"])
+def get_bilan():
+    mat = request.args.get("matricule")
+    Ba = Bilan.objects(mat=mat)
+    if request.method == "GET":
+
+        if Ba == None :
+            R = Reparation.objects(vh=mat)
+            if R == None:
+                return make_response("Aucune réparation effectuée ", 201)
+            else:
+                etat = []
+                B = Bilan(mat=mat ,etat=False)
+                rs = []
+                for r in R:
+                    rs.append(r.ref)
+                B.reparation = rs
+
+                max = 0
+                for b in Bilan.objects():
+                    if b.idB > max:
+                        max = b.idB
+                B.idB = max + 1
+                B.save()
+
+                return make_response(jsonify(B), 200)
+        else :
+            return make_response(jsonify(Ba))
+    else :
+        Ba.update(etat=True)
+
+
 # ------------reclamations-------------
 @app.route("/reclamation", methods=["GET", "POST", "DELETE"])
 def recl():
@@ -1649,11 +1826,11 @@ def one_rec_cl():
 
         ns = []
         for n in Reclamation.objects(mail=cl.mail):
-            ns.append(n)
+            ns.append(n.to_json())
         if ns == None:
             return make_response("Aucune Reclamations ", 201)
         else:
-            return make_response(jsonify("Reclamations", ns), 200)
+            return make_response(jsonify(ns), 200)
 
     else:
         for n in Reclamation.objects(mail=cl.mail):
@@ -1668,11 +1845,11 @@ def one_rec_ch():
     if request.method == "GET":
         ns = []
         for n in Reclamation.objects(mail=ch.mail):
-            ns.append(n)
+            ns.append(n.to_json())
         if ns == None:
             return make_response("Aucune Reclamations ", 201)
         else:
-            return make_response(jsonify("Reclamations", ns), 200)
+            return make_response(jsonify(ns), 200)
 
     else:
         for n in Reclamation.objects(mail=ch.mail):
@@ -1694,11 +1871,11 @@ def get_notifications():
 
         ns = []
         for n in Notification.objects(id_user=id):
-            ns.append(n)
+            ns.append(n.to_json())
         if ns == None:
             return make_response("Aucune Notification ", 201)
         else:
-            return make_response(jsonify("Notifications", ns), 200)
+            return make_response(jsonify(ns), 200)
 
     else:
         for n in Notification.objects(id_user=id):
