@@ -1,5 +1,7 @@
+import io
 import webbrowser
 from datetime import datetime, timedelta
+from IPython.display import Image
 from urllib import request
 from flask_cors import CORS, cross_origin
 from PIL import Image
@@ -10,7 +12,7 @@ import math
 from collections import namedtuple
 import json
 from flask_mail import Mail, Message
-from flask import Flask, make_response, request, jsonify, render_template
+from flask import Flask, make_response, request, jsonify, render_template, send_file
 from flask_mongoengine import MongoEngine
 from mongoengine import EmbeddedDocumentListField, ReferenceField, EmbeddedDocumentField, ListField
 from APIConst import db_name, user_pwd, secret_key
@@ -132,6 +134,7 @@ class Chauffeur(db.Document):
             "Mot de passe": self.pwd,
             "Disponibilite": self.dispo
 
+
         }
 
 
@@ -161,7 +164,6 @@ class Superviseur(db.Document):
             "Email": self.mail,
             "Mot de passe": self.pwd,
 
-
         }
 
 
@@ -184,6 +186,7 @@ class User(db.Document):
     pwd = db.StringField()
     mail = db.StringField()
     idu = db.StringField()
+    img = db.ImageField(thumbnail_size=(150, 150, False))
 
     def to_json(self):
         return {
@@ -378,10 +381,8 @@ class Reclamation(db.Document):
     typeR = db.StringField(choice=types, required=True)
 
 
-
-
-#----------must be done only one time---------------
-#-----------------DATABASE SETUPS ----------
+# ----------must be done only one time---------------
+# -----------------DATABASE SETUPS ----------
 @app.route("/reg", methods=['POST', 'GET'])
 def set_reg():
     if request.method == "POST":
@@ -457,7 +458,7 @@ def set_cite():
 
 
 # Routes !
-#-----------Reparation crud-------------------
+# -----------Reparation crud-------------------
 
 @app.route("/reparation", methods=['POST', 'GET', 'DELETE'])
 def repar():
@@ -640,14 +641,14 @@ def rep_one():
             return make_response("Mise à jour avec succées", 200)
 
 
-#-------------Entretien crud-------------
+# -------------Entretien crud-------------
 @app.route("/entretien", methods=['POST', 'GET', 'DELETE'])
 def Ent():
     if request.method == 'GET':
         Es = []
         for e in Entretien.objects().all():
             Es.append(e.to_json())
-        return make_response(jsonify("Les entretiens disponibles : ", Es), 200)
+        return make_response(jsonify(Es), 200)
     elif request.method == 'POST':
 
         E = Entretien.objects(codeEnt=request.form.get("codeEnt")).first()
@@ -673,7 +674,7 @@ def one_ent():
         if E == "None":
             return make_response("Entretien inexistant", 201)
         else:
-            return make_response(jsonify("Entretien : ", E), 200)
+            return make_response(jsonify(E), 200)
 
     elif request.method == "POST":
         if E == "None":
@@ -691,14 +692,14 @@ def one_ent():
             return make_response("Suppression avec succés !", 200)
 
 
-#--------Vehicule crud---------
+# --------Vehicule crud---------
 @app.route("/vehicule", methods=['POST', 'GET', 'DELETE'])
 def CrudVehicule():
     if request.method == "GET":
         Vs = []
         for v in Vehicule.objects():
             Vs.append(v.to_json())
-        return make_response(jsonify("Tous les véhicules :", Vs), 200)
+        return make_response(jsonify(Vs), 200)
 
     elif request.method == "POST":
 
@@ -741,13 +742,13 @@ def CrudVehicule():
 
 @app.route("/vehicule/", methods=['PUT', 'GET', 'DELETE'])
 def OneVehicule():
-    MAT = request.args.get("matricule")
+    MAT = request.args.get("Matricule")
     V = Vehicule.objects(mat=MAT).first()
     if request.method == "GET":
         if V == "None":
             return make_response("Vehicule inexistante", 201)
         else:
-            return make_response(jsonify("Véhicule : ", V), 200)
+            return make_response(jsonify(V), 200)
 
     elif request.method == "POST":
         TYPE = request.form.get("TypeV")
@@ -797,14 +798,14 @@ def OneVehicule():
             return make_response("Suppression avec Succés!", 200)
 
 
-#--------------Superviseur crud-----------
+# --------------Superviseur crud-----------
 @app.route("/superviseur", methods=['POST', 'GET', 'DELETE'])
 def CrudSuperviseur():
     if request.method == "GET":
         Vs = []
         for v in Superviseur.objects():
             Vs.append(v.to_json())
-        return make_response(jsonify("Les superviseurs sont : ", Vs), 200)
+        return make_response(jsonify(Vs), 200)
 
     elif request.method == "POST":
         email = request.form.get("mail")
@@ -819,14 +820,18 @@ def CrudSuperviseur():
 
         x = Superviseur.objects(mail=email).first()
         if x == None:
-            img = open(im, 'rb')
             V = Superviseur(nom=nom, pre=pre, num=num, dn=dn, de=de,
                             mail=email, adr=adr, pwd=pwd)
 
             U = User(ref=f"{V.nom}{V.pre}", idu="SUPP", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
-            V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+            if im != None:
+                img = open(im, 'rb')
+                V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+                U.img.replace(img, filename=f"{V.nom}.jpg")
+
+            U.img.replace(img, filename=f"{V.nom}.jpg")
             max = 0
-            for c in Chauffeur.objects:
+            for c in Superviseur.objects:
                 if c.id > max:
                     max = c.id
             V.id = max + 1
@@ -853,7 +858,7 @@ def OneSuperviseur():
         if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
-            return make_response(jsonify("Superviseur : ", V), 200)
+            return make_response(jsonify(V), 200)
 
     elif request.method == "POST":
         email = request.form.get("mail")
@@ -868,7 +873,7 @@ def OneSuperviseur():
         if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
-            if im != "" :
+            if im != "":
                 img = open(im, 'rb')
                 V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
             V.update(nom=nom, pre=pre, num=num, dn=dn, de=de,
@@ -888,21 +893,20 @@ def OneSuperviseur():
             return make_response("Suppression du superviseur avec succées  !", 200)
 
 
-#--------User--------------
+# --------User--------------
 @app.route("/users", methods=['GET', 'DELETE'])
 def user():
     if request.method == "GET":
         us = []
         for u in User.objects():
-            us.append(u.to_json())
+            us.append(u)
 
         if not us == []:
-            return make_response(jsonify("Users : ", us), 200)
+            return make_response(jsonify(us), 200)
         else:
             return make_response("Aucun utilisateur dans le systéme ", 201)
     else:
         User.objects.delete()
-
 
 
 # -----------Chauffeur crud-----------
@@ -911,7 +915,7 @@ def CrudChauffeur():
     if request.method == "GET":
         Vs = []
         for v in Chauffeur.objects():
-            Vs.append(v.to_json())
+            Vs.append(v)
         if Vs == []:
             return make_response("Aucun chauffeur dans le systéme", 201)
         else:
@@ -931,13 +935,14 @@ def CrudChauffeur():
         im = request.form.get("image")
         X = Chauffeur.objects(mail=email).first()
         if X == None:
-            img = open(im, 'rb')
-
             V = Chauffeur(nom=nom, pre=pre, num=num, dn=dn, de=de,
                           mail=email, adr=adr, pwd=pwd, typ=typ, nomsup=sup)
-
             U = User(ref=f"{V.nom}{V.pre}", idu="CHAUFF", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
-            V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+            if im != None:
+                img = open(im, 'rb')
+                V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+                U.img.replace(img, filename=f"{V.nom}.jpg")
+
             max = 0
             for c in Chauffeur.objects:
                 if c.id > max:
@@ -966,7 +971,7 @@ def OneChauffeur():
         if V == None:
             return make_response("Chauffeur inexistant ! ", 201)
         else:
-            return make_response(jsonify("Your Data ", V), 200)
+            return make_response(jsonify(V), 200)
     elif request.method == "POST":
         email = request.form.get("mail")
         nom = request.form.get("nom")
@@ -982,7 +987,7 @@ def OneChauffeur():
         if V == None:
             return make_response("Chauffeur inexistant ! ", 201)
         else:
-            if im != "" :
+            if im != "":
                 img = open(im, 'rb')
                 V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
 
@@ -1001,7 +1006,8 @@ def OneChauffeur():
             V.delete()
             return make_response("Suppression du chauffeur avec succées !", 200)
 
-#------------Crud Client---------------
+
+# ------------Crud Client---------------
 @app.route("/client", methods=['POST', 'GET', 'DELETE'])
 def cl_crud():
     if request.method == "GET":
@@ -1011,7 +1017,7 @@ def cl_crud():
         if Cl == []:
             return make_response("Aucun Client dans le systéme", 201)
         else:
-            return make_response(jsonify("Clients : ", Cl), 200)
+            return make_response(jsonify(Cl), 200)
 
     elif request.method == "POST":
         email = request.form.get("mail")
@@ -1024,13 +1030,14 @@ def cl_crud():
         im = request.form.get("image")
         X = Client.objects(mail=email).first()
         if X == None:
-            img = open(im, 'rb')
-
             V = Client(nom=nom, pre=pre, num=num, dn=dn,
                        mail=email, adr=adr, pwd=pwd)
 
             U = User(ref=f"{V.nom}{V.pre}", idu="CLIENT", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
-            V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+            if im != None:
+                img = open(im, 'rb')
+                V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+                U.img.replace(img, filename=f"{V.nom}.jpg")
             max = 0
             for c in Client.objects:
                 if c.id > max:
@@ -1043,9 +1050,45 @@ def cl_crud():
             return make_response("Client existe déjà!", 201)
     else:
         Client.objects.delete()
+        return make_response("Suppression avec succes", 200)
 
 
-@app.route
+# -----------------get image --------------------
+@app.route('/get-image/chauffeur/', methods=["GET"])
+def getimageCh():
+    id=request.args.get("chauff")
+    user = Chauffeur.objects(id=id).first()
+    if  user ==None :
+        return make_response("Aucun Chauffeur" , 201)
+    else :
+        return send_file(io.BytesIO(user.imgProfil.read()),
+                  attachment_filename='image.jpg',
+                  mimetype='image/jpg')
+
+@app.route('/get-image/superviseur/', methods=["GET"])
+def getimageSup():
+    id=request.args.get("sup")
+    user = Superviseur.objects(id=id).first()
+    if  user ==None :
+        return make_response("Aucun superviseur" , 201)
+    else :
+        return send_file(io.BytesIO(user.imgProfil.read()),
+                  attachment_filename='image.jpg',
+                  mimetype='image/jpg')
+
+
+@app.route('/get-image/Client/', methods=["GET"])
+def getimageCl():
+    id=request.args.get("cl")
+    user = Client.objects(id=id).first()
+    if  user ==None :
+        return make_response("Aucun Client" , 201)
+    else :
+        return send_file(io.BytesIO(user.imgProfil.read()),
+                  attachment_filename='image.jpg',
+                  mimetype='image/jpg')
+
+
 # ------------Demande Crud---------
 @app.route("/demande", methods=['POST', 'GET', 'DELETE'])
 def CrudDemande():
@@ -1057,7 +1100,7 @@ def CrudDemande():
         if Ds == []:
             return make_response("Rien a afficher", 201)
         else:
-            return make_response(jsonify("Tous les demandes  :", Ds), 200)
+            return make_response(jsonify(Ds), 200)
 
     elif request.method == "POST":
 
@@ -1199,6 +1242,7 @@ def CrudDemande():
     else:
         Demande.objects.delete()
 
+
 @app.route("/demande/", methods=["GET", "DELETE"])
 def one_dem():
     ref = request.args.get("ref")
@@ -1207,7 +1251,7 @@ def one_dem():
         if R == None:
             return make_response("Aucune réservation avec cette réference ", 201)
         else:
-            make_response(jsonify("Reservation :", R), 200)
+            make_response(jsonify(R), 200)
     else:
         R = Demande.objects(id=ref).first()
         if R == None:
@@ -1217,9 +1261,9 @@ def one_dem():
             return make_response("Suppression avec succées ", 200)
 
 
-#-------------Historique -----------------
+# -------------Historique -----------------
 @app.route
-@app.route("/histo", methods=['GET', 'DELETE'])
+@app.route("/histo/", methods=['GET', 'DELETE'])
 def histo():
     mat = request.args.get("matricule")
     if request.method == "GET":
@@ -1236,8 +1280,7 @@ def histo():
         return make_response("Suppression de l'historique", 200)
 
 
-
-#-----------Reservation et affectation ------------
+# -----------Reservation et affectation ------------
 @app.route("/reservation", methods=['GET', 'POST', 'DELETE'])
 def reservation():
     dem = request.args.get("idDemande")
@@ -1359,6 +1402,7 @@ def reservation():
     else:
         Reservation.objects.delete()
 
+
 @app.route("/reservation/", methods=["GET", "DELETE"])
 def one_res():
     ref = request.args.get("ref")
@@ -1368,6 +1412,7 @@ def one_res():
             return make_response("Aucune réservation avec cette réference ", 201)
         else:
             make_response(jsonify("Reservation :", R), 200)
+
 
 # get les  affectations d'un chauffeur :
 @app.route("/affectation/chauffeur", methods=['GET', 'DELETE'])
@@ -1387,6 +1432,7 @@ def affec(id=None):
         for a in Affectation.objects(id_chauff=id):
             a.delete()
         return make_response("Suppression avec succés ", 200)
+
 
 # tirer les affectations par vehicules : coté superviseur
 
@@ -1408,8 +1454,7 @@ def affec_v(mat=None):
         return make_response("Suppression avec succés ", 200)
 
 
-
-#---------Planning --------
+# ---------Planning --------
 def Createplan(id=None, mat=None):
     coord = []
     lats = []
@@ -1436,7 +1481,7 @@ def Createplan(id=None, mat=None):
 
 
 # Le planning de chaque chauffeur : Dashboard
-@app.route("/planning", methods=["DELETE", "GET" , "POST"])
+@app.route("/planning", methods=["DELETE", "GET", "POST"])
 def planning(id=None):
     id = request.args.get("chauffeur")
     if request.method == "GET":
@@ -1444,11 +1489,11 @@ def planning(id=None):
         for p in Planning.objects(chauffeur=id):
             ps.append(p)
         if ps == []:
-            return make_response("Aucun plan pour le moment" , 201)
-        else :
-            return make_response(jsonify("Les plannings : " , ps) , 200)
+            return make_response("Aucun plan pour le moment", 201)
+        else:
+            return make_response(jsonify(ps), 200)
 
-    elif request.method =="POST":
+    elif request.method == "POST":
         mats = []
         for A in Affectation.objects(id_chauff=id):
             if A.mat in mats:
@@ -1457,20 +1502,18 @@ def planning(id=None):
                 mats.append(A.mat)
 
         for mat in mats:
-            P = Planning.objects(id_chauff = id)
-            if P != None :
-                return make_response("Planning existe dejà " , 201)
-            else :
+            P = Planning.objects(id_chauff=id)
+            if P != None:
+                return make_response("Planning existe dejà ", 201)
+            else:
                 Createplan(id, mat)
                 return make_response("ajout avec succées", 200)
-    else :
+    else:
         Planning.objects(chauffeur=id).delete()
-        return make_response("Suppresion avec succées" , 200)
+        return make_response("Suppresion avec succées", 200)
 
 
-
-
-#------------GET LES NOMS DES cites , departement , region-----------
+# ------------GET LES NOMS DES cites , departement , region-----------
 @app.route("/cite", methods=["GET"])
 def get_cite():
     cs = []
@@ -1495,8 +1538,7 @@ def get_reg():
         return make_response(jsonify("Regions", cs), 200)
 
 
-
-#----------Geolocation things -------------
+# ----------Geolocation things -------------
 @app.route("/trajet", methods=["GET"])
 def trajet():
     id = request.args.get("idp")
@@ -1566,7 +1608,7 @@ def trajet():
     return make_response("Done", 200)
 
 
-#------------reclamations-------------
+# ------------reclamations-------------
 @app.route("/reclamation", methods=["GET", "POST", "DELETE"])
 def recl():
     if request.method == "GET":
@@ -1637,7 +1679,14 @@ def one_rec_ch():
             n.delete()
         return make_response("Suppression des reclamations avec succées ", 201)
 
-#------------"notifications"----------
+
+@app.route("/Accord", methods=["GET", "POST"])
+def donner_accord():
+    id = request.args.get("chauffeur")
+    mat = request.args.get("matricule")
+
+
+# -----------"notifications"----------
 @app.route("/notification", methods=["GET", "DELETE"])
 def get_notifications():
     id = request.args.get("User")
@@ -1655,6 +1704,7 @@ def get_notifications():
         for n in Notification.objects(id_user=id):
             n.delete()
         return make_response("Suppression des reclamations avec succées ", 201)
+
 
 if __name__ == '__main__':
     app.run()
