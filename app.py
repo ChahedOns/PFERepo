@@ -4,20 +4,26 @@ from datetime import datetime, timedelta
 from IPython.display import Image
 from urllib import request
 from flask_cors import CORS, cross_origin
-from PIL import Image
 import bson
 import folium
 import numpy as np
 import math
 from collections import namedtuple
 import json
+from flask_jwt import JWT, jwt_required, current_identity
+from flask_login import current_user, login_user, login_manager, login_required, LoginManager
 from flask_mail import Mail, Message
-from flask import Flask, make_response, request, jsonify, render_template, send_file
+from flask import Flask, make_response, request, jsonify, render_template, send_file , url_for
 from flask_mongoengine import MongoEngine
 from mongoengine import EmbeddedDocumentListField, ReferenceField, EmbeddedDocumentField, ListField
+
+
+from werkzeug.security import check_password_hash, generate_password_hash, safe_str_cmp
 from APIConst import db_name, user_pwd, secret_key
 from pyroutelib3 import Router
-
+from flask_restful import Api,Resource
+from flask_jwt import JWT,jwt_required
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired
 # configurations !
 app = Flask(__name__)
 DB_URI = f"mongodb+srv://OnsChahed:{user_pwd}@pfecluster.c2obu.mongodb.net/{db_name}?retryWrites=true&w=majority"
@@ -31,14 +37,19 @@ app.config.update(dict(
     MAIL_PASSWORD=None,
 ))
 
-mail = Mail(app)
+
 db = MongoEngine()
 db.init_app(app)
-
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
 pnt_dep = (48.866667, 2.333333)
 cors = CORS(app, resources={r"/*": {"origins": "*"}})
 app.config['CORS_HEADERS'] = 'Content-Type'
 
+app.config['SECRET_KEY'] = secret_key
+mail = Mail(app)
+s = URLSafeTimedSerializer('Thisisasecret!')
 
 class Reparation(db.Document):
     ref = db.StringField()
@@ -207,7 +218,16 @@ class User(db.Document):
             "Email": self.mail,
         }
 
+def authenticate(mail, password):
+    user = User.objects(mail=mail)
+    if user and safe_str_cmp(user.pwd.encode('utf-8'), password.encode('utf-8')):
+        return user
 
+def identity(payload):
+    userref = payload['identity']
+    return User.objects(ref=userref).first
+
+jwt = JWT(app, authenticate, identity)
 class Destination(db.Document):
     ref = db.StringField(primary_key=True)
     lat = db.FloatField(required=True)
@@ -301,6 +321,7 @@ class Demande(db.Document):
     reg = db.StringField()
     dept = db.StringField()
     rue = db.StringField()
+    urg = db.BooleanField(required=True)
     chauff = db.BooleanField()
 
     def to_json(self):
@@ -327,7 +348,6 @@ class Reservation(db.Document):
     mat = ReferenceField("Vehicule")
     datedebR = db.DateField(required=True)
     datefinR = db.DateField()
-
     # Destination
     dept = db.StringField(required=True)
     reg = db.StringField(required=True)
@@ -600,6 +620,7 @@ def set_cite():
 # -----------Reparation crud-------------------
 
 @app.route("/reparation", methods=['POST', 'GET', 'DELETE'])
+
 def repar():
     if request.method == 'GET':
         Rs = []
@@ -656,6 +677,7 @@ def repar():
 
 
 @app.route("/reparation/vehicule/", methods=['GET', 'DELETE'])
+
 def rep_vec(mat=None):
     matricule = request.args.get("matricule")
     R = Reparation.objects(vh=matricule).first()
@@ -703,6 +725,7 @@ def rep_vec(mat=None):
 
 
 @app.route("/reparation/entretien/", methods=['GET', 'DELETE'])
+
 def rep_ent(code=None):
     codeent = request.args.get("code")
     R = Reparation.objects(En=codeent).first()
@@ -733,6 +756,7 @@ def rep_ent(code=None):
 
 
 @app.route("/reparation/", methods=['GET', 'POST', 'DELETE'])
+
 def rep_one():
     ref = request.args.get("ref")
     R = Reparation.objects(ref=ref).first()
@@ -782,6 +806,7 @@ def rep_one():
 
 # -------------Entretien crud-------------
 @app.route("/entretien", methods=['POST', 'GET', 'DELETE'])
+
 def Ent():
     if request.method == 'GET':
         Es = []
@@ -806,6 +831,7 @@ def Ent():
 
 
 @app.route("/entretien/", methods=['POST', 'GET', 'DELETE'])
+
 def one_ent():
     code = request.args.get("code")
     E = Entretien.objects(codeEnt=code).first()
@@ -833,6 +859,7 @@ def one_ent():
 
 # --------Vehicule crud---------
 @app.route("/vehicule", methods=['POST', 'GET', 'DELETE'])
+
 def CrudVehicule():
     if request.method == "GET":
         Vs = []
@@ -881,7 +908,9 @@ def CrudVehicule():
 
 
 @app.route("/vehicule/", methods=['PUT', 'GET', 'DELETE'])
+
 def OneVehicule():
+
     MAT = request.args.get("Matricule")
     V = Vehicule.objects(mat=MAT).first()
     if request.method == "GET":
@@ -940,6 +969,7 @@ def OneVehicule():
 
 # --------------Superviseur crud-----------
 @app.route("/superviseur", methods=['POST', 'GET', 'DELETE'])
+
 def CrudSuperviseur():
     if request.method == "GET":
         Vs = []
@@ -960,11 +990,12 @@ def CrudSuperviseur():
 
         x = Superviseur.objects(mail=email).first()
         if x == None:
+            hashpass = generate_password_hash(pwd, method='sha256')
             V = Superviseur(nom=nom, pre=pre, num=num,
-                            mail=email, adr=adr, pwd=pwd)
+                            mail=email, adr=adr, pwd=hashpass)
             V.dn = datetime.strptime(dn, "%Y-%m-%d")
             V.de = datetime.strptime(de, "%Y-%m-%d")
-            U = User(ref=f"{V.nom}{V.pre}", idu="SUPP", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
+            U = User(ref=f"{V.nom}{V.pre}", idu="SUPP", nom=V.nom, mail=V.mail, pwd=hashpass, pre=V.pre)
             if im != None:
                 img = open(im, 'rb')
                 V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
@@ -1014,13 +1045,14 @@ def OneSuperviseur():
         if V == None:
             return make_response("Superviseur Inexistant", 201)
         else:
+            hashpass = generate_password_hash(pwd, method='sha256')
             if im != "":
                 img = open(im, 'rb')
                 V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
-            V.update(nom=nom, pre=pre, num=num, dn=dn, de=de,
-                     mail=email, adr=adr, pwd=pwd)
+            V.update(nom=nom, pre=pre, num=num, dn=datetime.strptime(dn, "%Y-%m-%d"), de=datetime.strptime(de, "%Y-%m-%d"),
+                     mail=email, adr=adr, pwd=hashpass)
             U = User.objects(mail=V.mail).first()
-            U.update(nom=nom, mail=email, pre=pre)
+            U.update(nom=nom, mail=email, pre=pre, pwd=hashpass)
 
             return make_response("Mise à jour avec succées! ", 200)
 
@@ -1036,6 +1068,7 @@ def OneSuperviseur():
 
 # --------User--------------
 @app.route("/users", methods=['GET', 'DELETE'])
+
 def user():
     if request.method == "GET":
         us = []
@@ -1052,6 +1085,7 @@ def user():
 
 # -----------Chauffeur crud-----------
 @app.route("/chauffeur", methods=['POST', 'GET', 'DELETE'])
+
 def CrudChauffeur():
     if request.method == "GET":
         Vs = []
@@ -1076,9 +1110,10 @@ def CrudChauffeur():
         im = request.form.get("image")
         X = Chauffeur.objects(mail=email).first()
         if X == None:
-            V = Chauffeur(nom=nom, pre=pre, num=num, dn=dn, de=de,
-                          mail=email, adr=adr, pwd=pwd, nomsup=sup)
-            U = User(ref=f"{V.nom}{V.pre}", idu="CHAUFF", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
+            hashpass = generate_password_hash(pwd, method='sha256')
+            V = Chauffeur(nom=nom, pre=pre, num=num, dn=datetime.strptime(dn, "%Y-%m-%d"), de=datetime.strptime(de, "%Y-%m-%d"),
+                          mail=email, adr=adr, pwd=hashpass, nomsup=sup)
+            U = User(ref=f"{V.nom}{V.pre}", idu="CHAUFF", nom=V.nom, mail=V.mail, pwd=hashpass, pre=V.pre)
             V.typ = typ.split(",")
             if im != None:
                 img = open(im, 'rb')
@@ -1106,6 +1141,7 @@ def CrudChauffeur():
 
 
 @app.route("/chauffeur/", methods=['POST', 'GET', 'DELETE'])
+
 def OneChauffeur():
     id = request.args.get("id")
     V = Chauffeur.objects(id=id).first()
@@ -1134,9 +1170,10 @@ def OneChauffeur():
                 V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
 
             U = User.objects(mail=V.mail).first()
-            V.update(nom=nom, pre=pre, num=num, dn=dn, de=de,
-                     mail=email, adr=adr, pwd=pwd, typ=typ, nomsup=sup)
-            U.update(nom=nom, mail=email, pre=pre)
+            hashpass = generate_password_hash(pwd, method='sha256')
+            V.update(nom=nom, pre=pre, num=num,dn=datetime.strptime(dn, "%Y-%m-%d"), de=datetime.strptime(de, "%Y-%m-%d"),
+                     mail=email, adr=adr, pwd=hashpass, typ=typ, nomsup=sup)
+            U.update(nom=nom, mail=email, pre=pre, pwd=hashpass)
 
             return make_response("Mise à jour d'un chauffeur avec succées ! ", 200)
     else:
@@ -1150,7 +1187,8 @@ def OneChauffeur():
 
 
 # ------------Crud Client---------------
-@app.route("/client", methods=['POST', 'GET', 'DELETE'])
+@app.route("/client", methods=['GET', 'DELETE'])
+
 def cl_crud():
     if request.method == "GET":
         Cl = []
@@ -1160,36 +1198,6 @@ def cl_crud():
             return make_response("Aucun Client dans le systéme", 201)
         else:
             return make_response(jsonify(Cl.to_json()), 200)
-
-    elif request.method == "POST":
-        email = request.form.get("mail")
-        nom = request.form.get("nom")
-        pre = request.form.get("pre")
-        num = request.form.get("ntel")
-        dn = request.form.get("dn")
-        adr = request.form.get("adr")
-        pwd = request.form.get("pwd")
-        im = request.form.get("image")
-        X = Client.objects(mail=email).first()
-        if X == None:
-            V = Client(nom=nom, pre=pre, num=num, dn=dn,
-                       mail=email, adr=adr, pwd=pwd)
-
-            U = User(ref=f"{V.nom}{V.pre}", idu="CLIENT", nom=V.nom, mail=V.mail, pwd=V.pwd, pre=V.pre)
-            if im != None:
-                img = open(im, 'rb')
-                V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
-                U.img.replace(img, filename=f"{V.nom}.jpg")
-            max = 0
-            for c in Client.objects:
-                if c.id > max:
-                    max = c.id
-            V.id = max + 1
-            V.save()
-            U.save()
-            return make_response("Ajout d'un client avec succées", 200)
-        else:
-            return make_response("Client existe déjà!", 201)
     else:
         Client.objects.delete()
         return make_response("Suppression avec succes", 200)
@@ -1197,6 +1205,7 @@ def cl_crud():
 
 # -----------------get image --------------------
 @app.route('/get-image/chauffeur/', methods=["GET"])
+
 def getimageCh():
     id = request.args.get("chauff")
     user = Chauffeur.objects(id=id).first()
@@ -1209,6 +1218,7 @@ def getimageCh():
 
 
 @app.route('/get-image/superviseur/', methods=["GET"])
+
 def getimageSup():
     id = request.args.get("sup")
     user = Superviseur.objects(id=id).first()
@@ -1221,6 +1231,7 @@ def getimageSup():
 
 
 @app.route('/get-image/Client/', methods=["GET"])
+
 def getimageCl():
     id = request.args.get("cl")
     user = Client.objects(id=id).first()
@@ -1234,6 +1245,7 @@ def getimageCl():
 
 # ------------Demande Crud---------
 @app.route("/demande", methods=['POST', 'GET', 'DELETE'])
+
 def CrudDemande():
     id = request.args.get("id_cl")
     if request.method == "GET":
@@ -1259,14 +1271,13 @@ def CrudDemande():
         rue = request.form.get("rue")
         urg = request.form.get("urgent")
         cl = Client.objects.get(id=id)
-        D = Demande(obj=obj, type=type, nbPls=int(nb), chauff=bool(ok),
-                    cap=float(cap), date_res=date, date_fin=dateF, reg=reg, dept=dept, mail=cl.mail, rue=rue,
-                    urg=bool(urg))
         max = 0
         for d in Demande.objects():
             if d.id_dem > max:
                 max = d.id_dem
-        D.id_dem = max
+        D = Demande(id_dem=max+1,obj=obj, type=type, nbPls=nb, chauff=ok,
+                    cap=cap, date_res=date, date_fin=dateF, reg=reg, dept=dept, mail=cl.mail, rue=rue,
+                    urg=urg)
         D.save()
 
         cl = Client.objects.get(id=id)
@@ -1282,7 +1293,7 @@ def CrudDemande():
         X = Vehicule.objects(ty=type, nb=nb, cap=cap)
         if X == None:
             N = Notification(id_user=U.id, obj="Demande",
-                             text=f"Votre demande est prise en considération on vous notifie lorsque elle est prête")
+                             text="Votre demande est prise en considération on vous notifie lorsque elle est prête")
             max = 0
             for n in Notification.objects():
                 if n.id > max:
@@ -1296,10 +1307,10 @@ def CrudDemande():
             if ok == "False":  # sans chaufffeur
                 for v in X:
                     if v.dispo == True:
-                        rd.append(v)
+                        rd.append(v.to_json())
                 if rd == []:
                     N = Notification(id_user=U.ref, obj="Demande",
-                                     text=f"Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
+                                     text="Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
                     max = 0
                     for n in Notification.objects():
                         if n.id > max:
@@ -1318,7 +1329,7 @@ def CrudDemande():
                             Vs.append(v.to_json())
                     if Vs == []:
                         N = Notification(id_user=U.ref, obj="Demande",
-                                         text=f"Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
+                                         text="Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
                         max = 0
                         for n in Notification.objects():
                             if n.id > max:
@@ -1333,44 +1344,44 @@ def CrudDemande():
                     Vs = []
                     ref = {}
                     refs = []
-                    # dans le cas ou le vehicule a deja une affectation on peut récupérer directement la référence de l'affectation
+                    #dans le cas ou le vehicule a deja une affectation on peut récupérer directement la référence de l'affectation
                     for v in X:
-                        # LEs vehicules de mm type et ca qui sont déja disponible sont recommandées directement
+                        #Les vehicules de mm type et ca qui sont déja disponible sont recommandées directement
                         if v.dispo == True:
                             Vs.append(v.to_json())
-                            ref.append()
                         else:
                             af = []
-                            # GEt all the affectation de mat V
+                            #GEt all the affectation de mat V
                             for a in Affectation.objects():
                                 if a.mat == v.mat:
-                                    af.append(a)
-                            # Prend la destination de la demande pour la vérifier avec les autres affectations du même véhicule
+                                    af.append(a.to_json())
+                            #Prend la destination de la demande pour la vérifier avec les autres affectations du même véhicule
                             C = Cities.objects.get(slug_cite=rue)
                             dp = Dept.objects.get(code_dept=C.dept)
                             r = Region.objects.get(code_reg=dp.code_reg)
-
+                            print(af)
                             if af == None:
                                 pass
                             else:
                                 for a in af:
                                     # trouvé si il y une affecation avec la même destination!
-                                    if Affectation.objects(mat=a.mat, datedebR=date, datefinR=dateF).count() <= 3:
-                                        if a.rue == rue:
+                                    if Affectation.objects(mat=a['matricule']).count() <= 3:
+                                        if a['rue'] == rue:
                                             Vs.append(v.to_json)
-                                            refs.append(jsonify("matricule", a.mat, "Affectation", a.id_aff))
+                                            refs.append(jsonify("matricule",a['matricule'] , "Affectation", a['IDChauff']))
 
-                                        elif a.dept == dept:
+                                        elif a['departement'] == dept:
                                             Vs.append(v.to_json)
-                                            refs.append(jsonify("matricule", a.mat, "Affectation", a.id_aff))
-                                        elif a.reg == reg:
+                                            refs.append(jsonify("matricule", a['matricule'], "Affectation",a['IDChauff']))
+                                        elif a['region'] == reg:
                                             Vs.append(v.to_json)
-                                            refs.append(jsonify("matricule", a.mat, "Affectation", a.id_aff))
+                                            refs.append(jsonify("matricule", a['matricule'], "Affectation", a['IDChauff']))
                                         else:
                                             pass
+
                     if Vs == []:
                         N = Notification(id_user=U.ref, obj="Demande",
-                                         text=f"Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
+                                         text="Votre demande est prise en considération on vous notifie lorsque un vehicule soit prêt")
                         max = 0
                         for n in Notification.objects():
                             if n.id > max:
@@ -1380,23 +1391,24 @@ def CrudDemande():
                         return make_response("Rien a afficher!", 201)
                     else:
                         # on a utilisé ref pour qu'on peut récupérer la reférence de l'affecation si elle existe !
-                        return make_response(jsonify("Véhicules recommandés", Vs, "references : ", refs), 200)
+                        return make_response(jsonify("Véhicules recommandés", Vs ), 200)
 
     else:
         Demande.objects.delete()
 
 
 @app.route("/demande/", methods=["GET", "DELETE"])
+
 def one_dem():
     ref = request.args.get("ref")
     if request.method == "GET":
-        R = Demande.objects(id=ref).first()
+        R = Demande.objects(id_dem=ref).first()
         if R == None:
             return make_response("Aucune réservation avec cette réference ", 201)
         else:
             make_response(jsonify(R.to_json()), 200)
     else:
-        R = Demande.objects(id=ref).first()
+        R = Demande.objects(id_dem=ref).first()
         if R == None:
             return make_response("Aucune réservation avec cette réference ", 201)
         else:
@@ -1405,8 +1417,9 @@ def one_dem():
 
 
 # -------------Historique -----------------
-@app.route
+
 @app.route("/histo/", methods=['GET', 'DELETE'])
+
 def histo():
     mat = request.args.get("matricule")
     if request.method == "GET":
@@ -1425,6 +1438,7 @@ def histo():
 
 # -----------Reservation et affectation ------------
 @app.route("/reservation", methods=['GET', 'POST', 'DELETE'])
+
 def reservation():
     dem = request.args.get("idDemande")
     mat = request.args.get("mat")
@@ -1433,9 +1447,9 @@ def reservation():
     if request.method == "GET":
         Rs = []
         # les réservations urgentes puis les non urgentes!
-        for r in Affectation.objects(urg=True):
+        for r in Reservation.objects(urg=True):
             Rs.append(r.to_json())
-        for r in Affectation.objects(urg=False):
+        for r in Reservation.objects(urg=False):
             Rs.append(r.to_json())
         if Rs == []:
             return make_response("Rien a afficher", 201)
@@ -1449,7 +1463,7 @@ def reservation():
                         chauff=D.chauff, objet=D.obj, email_cl=D.mail, urg=D.urg)
         R.save()
         V = Vehicule.objects.get(mat=mat)
-        # sans Chauffeur ! reservation directement au client
+        #sans Chauffeur ! reservation directement au client
         if D.chauff == "False":
             V.update(dispo=False)
             H = Historique(mat=mat,
@@ -1474,8 +1488,8 @@ def reservation():
 
         else:
             if idaff != None:
-                # Notifier le chauffeur
-                A = Affectation.objects.get(id_aff=idaff)
+                #Notifier le chauffeur
+                A = Affectation.objects(id_aff=idaff)
                 U = User.objects.get(mail=A.id_chauff)
                 N = Notification(id_user=U.ref, obj="Affectation",
                                  text="Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
@@ -1486,12 +1500,12 @@ def reservation():
                 N.id = max
                 N.save()
 
-                # creation de la nouvelle affectation
+                #Creation de la nouvelle affectation
                 AF = Affectation(mat=A.mat, reg=D.reg, dept=D.dept, rue=D.rue, chauff_mail=A.chauff_mail,
                                  id_chauff=A.id_chauff,
                                  dateDeb=D.date_res
                                  , dateFin=D.date_fin, cl=D.mail, obj=D.obj)
-                C = Cities.objects.get(slug_cite=D.rue)
+                C = Cities.objects(slug_cite=D.rue)
                 Ds = Destination(ref=f"{D.reg} {D.dept} {D.rue}", reg=D.reg, dept=D.dept, rue=D.rue, lat=C.lat,
                                  lar=C.lng)
                 AF.des_lan = Ds.lar
@@ -1507,7 +1521,7 @@ def reservation():
 
             else:
                 ch = Chauffeur.objects(dispo=True)
-                V = Vehicule.objects.get(mat=mat)
+                V = Vehicule.objects(mat=mat)
                 for chauff in ch:
                     if V.tyP in chauff.typ:
                         A = Affectation(mat=mat, reg=D.reg, dept=D.dept, rue=D.rue, chauff_mail=chauff.mail,
@@ -1515,7 +1529,7 @@ def reservation():
                                         dateDeb=R.datedebR
                                         , dateFin=R.datefinR, cl=R.email_cl, obj=R.objet)
 
-                        C = Cities.objects.get(nom_cite=R.rue)
+                        C = Cities.objects(nom_cite=R.rue)
                         D = Destination(ref=f"{R.reg} {R.dept} {R.rue}", reg=R.reg, dept=R.dept, rue=R.rue, lat=C.lat,
                                         lar=C.lng)
                         A.des_lan = D.lar
@@ -1528,9 +1542,9 @@ def reservation():
                         A.save()
                         D.save()
                         chauff.update(dispo=False)
-                        U = User.objects.get(mail=chauff.mail)
+                        U = User.objects(mail=chauff.mail)
                         N = Notification(id_user=U.ref, obj="Affectation",
-                                         text=f"Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
+                                         text="Vous avez une nouvelle Affectation consulter le planning pour plus de detail")
                         max = 0
                         for n in Notification.objects():
                             if n.id > max:
@@ -1547,6 +1561,8 @@ def reservation():
 
 
 @app.route("/reservation/", methods=["GET", "DELETE"])
+@login_required
+@jwt_required()
 def one_res():
     ref = request.args.get("ref")
     if request.method == "GET":
@@ -1559,6 +1575,7 @@ def one_res():
 
 # get les  affectations d'un chauffeur :
 @app.route("/affectation/chauffeur", methods=['GET', 'DELETE'])
+
 def affec(id=None):
     id = request.args.get("id_chauff")
 
@@ -1580,6 +1597,7 @@ def affec(id=None):
 # tirer les affectations par vehicules : coté superviseur
 
 @app.route("/affectation/vehicule", methods=['GET', 'DELETE'])
+
 def affec_v(mat=None):
     mat = request.args.get("mat")
     if request.method == "GET":
@@ -1625,6 +1643,7 @@ def Createplan(id=None, mat=None):
 
 # Le planning de chaque chauffeur : Dashboard
 @app.route("/planning", methods=["DELETE", "GET", "POST"])
+
 def planning(id=None):
     id = request.args.get("chauffeur")
     if request.method == "GET":
@@ -1754,18 +1773,19 @@ def trajet():
 
 # ------------Bilan------------
 @app.route("/bilan/", methods=["GET", "POST"])
+
 def get_bilan():
     mat = request.args.get("matricule")
     Ba = Bilan.objects(mat=mat)
     if request.method == "GET":
 
-        if Ba == None :
+        if Ba == None:
             R = Reparation.objects(vh=mat)
             if R == None:
                 return make_response("Aucune réparation effectuée ", 201)
             else:
                 etat = []
-                B = Bilan(mat=mat ,etat=False)
+                B = Bilan(mat=mat, etat=False)
                 rs = []
                 for r in R:
                     rs.append(r.ref)
@@ -1779,14 +1799,15 @@ def get_bilan():
                 B.save()
 
                 return make_response(jsonify(B), 200)
-        else :
+        else:
             return make_response(jsonify(Ba))
-    else :
+    else:
         Ba.update(etat=True)
 
 
 # ------------reclamations-------------
 @app.route("/reclamation", methods=["GET", "POST", "DELETE"])
+
 def recl():
     if request.method == "GET":
         Rs = []
@@ -1819,9 +1840,10 @@ def recl():
 
 
 @app.route("/reclamation/client", methods=["GET", "DELETE"])
+
 def one_rec_cl():
     id = request.args.get("client")
-    cl = Client.objects.get(id=id)
+    cl = Client.objects.get(id_cl=id)
     if request.method == "GET":
 
         ns = []
@@ -1839,9 +1861,10 @@ def one_rec_cl():
 
 
 @app.route("/reclamation/chauffeur", methods=["GET", "DELETE"])
+
 def one_rec_ch():
     id = request.args.get("chauffeur")
-    ch = Chauffeur.objects.get(id=id)
+    ch = Chauffeur.objects(id=id)
     if request.method == "GET":
         ns = []
         for n in Reclamation.objects(mail=ch.mail):
@@ -1858,6 +1881,7 @@ def one_rec_ch():
 
 
 @app.route("/Accord", methods=["GET", "POST"])
+
 def donner_accord():
     id = request.args.get("chauffeur")
     mat = request.args.get("matricule")
@@ -1865,6 +1889,7 @@ def donner_accord():
 
 # -----------"notifications"----------
 @app.route("/notification", methods=["GET", "DELETE"])
+
 def get_notifications():
     id = request.args.get("User")
     if request.method == "GET":
@@ -1882,6 +1907,87 @@ def get_notifications():
             n.delete()
         return make_response("Suppression des reclamations avec succées ", 201)
 
+#------------------------Athentification things ------------------------------------
+"""
 
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.objects(ref=user_id).first
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return make_response("Deja connecter", 202)
+
+    if request.method == 'POST':
+        check_user = User.objects(email=request.form.get("mail")).first()
+        if check_user:
+            if check_password_hash(check_user['password'], request.form.get("pwd")):
+                login_user(check_user)
+                token_payload = dict()
+                d = token_payload
+                login_user(check_user)
+                d["name"]= check_user.nom
+                d["mail"]=check_user.email
+                d["Role"] = check_user.idu
+                token_payload["exp"] = datetime.datetime.utcnow() + datetime.timedelta(minutes=480)
+                token = jwt.encode(token_payload, app.config['SECRET_KEY']).decode()
+
+                return make_response(token, 200)
+            else:
+                return make_response("password invalide", 201)
+        else:
+            return make_response("Mail invalide", 201)
+
+
+# ---------------register client----------------
+def mailconfig(mail=None):
+    token = s.dumps(mail, salt='email-confirm')
+    msg = Message('Confirm Email', sender='chahedons1@gmail.com', recipients=[mail])
+    link = url_for('confirm_email', token=token, _external=True)
+    msg.body = 'Your link is {}'.format(link)
+    mail.send(msg)
+    return  make_response("mail envoyé", 200)
+
+@app.route('/register/client', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        email = request.form.get("mail")
+        nom = request.form.get("nom")
+        pre = request.form.get("pre")
+        num = request.form.get("ntel")
+        dn = request.form.get("dn")
+        adr = request.form.get("adr")
+        pwd = request.form.get("pwd")
+        im = request.form.get("image")
+        X = Client.objects(mail=email).first()
+
+        existing_user = User.objects(email=email).first()
+        if existing_user is None:
+
+            hashpass = generate_password_hash(pwd, method='sha256')
+            V = Client(nom=nom, pre=pre, num=num, dn=datetime.strptime(dn, "%Y-%m-%d"),
+                       mail=email, adr=adr, pwd=hashpass)
+
+            U = User(ref=f"{V.nom}{V.pre}", idu="CLIENT", nom=V.nom, mail=V.mail, pwd=hashpass, pre=V.pre)
+            if im != None:
+                img = open(im, 'rb')
+                V.imgProfil.replace(img, filename=f"{V.nom}.jpg")
+                U.img.replace(img, filename=f"{V.nom}.jpg")
+            max = 0
+            for c in Client.objects:
+                if c.id > max:
+                    max = c.id
+            V.id = max + 1
+            V.save()
+            U.save()
+            login_user(U)
+            mailconfig(V.maim )
+            return make_response("Bienvenue a <<FleetIt>>", 200)
+        else:
+            return make_response("Compte existatnt", 201)
+
+"""
 if __name__ == '__main__':
     app.run()
